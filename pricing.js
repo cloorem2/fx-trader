@@ -12,21 +12,10 @@ var options = {
     "Authorization": api_key,
   },
 };
-var maxb = Number(fs.readFileSync('maxb','utf8'));
-var maxa = Number(fs.readFileSync('maxa','utf8'));
 var apvar = Number(fs.readFileSync('apvar','utf8'));
-var corr0 = Number(fs.readFileSync('corr0','utf8'));
-var opvar = Number(fs.readFileSync('opvar','utf8'));
 var aspread = Number(fs.readFileSync('aspread','utf8'));
 var chunk_save = '';
-
 var sdelay = Number(fs.readFileSync('sdelay','utf8'));
-var oh0 = Number(fs.readFileSync('oh0','utf8'));
-var om0 = Number(fs.readFileSync('om0','utf8'));
-var os0 = Number(fs.readFileSync('os0','utf8'));
-
-var linec = 0;
-var odmidp = Number(fs.readFileSync('odmidp','utf8'));
 
 var dmid_brain = [0,0,0,0,0,0];
 const dmid_brain_data = fs.readFileSync('dmid_brain','utf8');
@@ -39,9 +28,6 @@ const pvar_brain_lines = pvar_brain_data.split('\n');
 for (var i in pvar_brain) pvar_brain[i] = Number(pvar_brain_lines[i]);
 
 var v = [0,0,0,0,0,0],nv = [0,0,0,0,0,0];
-const v_data = fs.readFileSync('v','utf8');
-const v_lines = v_data.split('\n');
-for (var i in v) { v[i] = Number(v_lines[i]); }
 
 var aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
 var aadmid_err = Number(fs.readFileSync('aadmid_err','utf8'));
@@ -56,9 +42,10 @@ var balance = 1;
 var posp = 0;
 var nav = 1;
 var max_nav = 1;
+var long_nav = 0.5,short_nav = 0.5;
 var max_dd = 0;
 var opt_levx = Number(fs.readFileSync('opt_levx','utf8'));
-// var opt_levx = 0.5;
+// var opt_levx = 0.01;
 var levx = opt_levx;
 
   var pdmidp = 0;
@@ -66,9 +53,12 @@ var levx = opt_levx;
 
   var a = 1, b = 1;
 var opt_sellm = Number(fs.readFileSync('sellm','utf8'));
+var opt_sellf = Number(fs.readFileSync('sellf','utf8'));
+// var opt_sellf = 0.5;
 var opt_buym = Number(fs.readFileSync('buym','utf8'));
 // opt_sellm = 0; opt_buym = 0;
 var sellm = opt_sellm,buym = opt_buym;
+var sellf = opt_sellf;
 var tsell_brain = [0,0,0,0,0,0];
 var tbuy_brain = [0,0,0,0,0,0];
 var sell_brain = [0,0,0,0,0,0];
@@ -92,6 +82,7 @@ try {
 } catch {}
 
 var apdmidp = Number(fs.readFileSync('apdmidp','utf8'));
+// var apdmidp = 0;
 var apvarp = Number(fs.readFileSync('apvarp','utf8'));
 
       // a = 4 * Math.log(aadmid_err);
@@ -109,6 +100,7 @@ var optx = 0;
 var opt_optx = Number(fs.readFileSync('opt_optx','utf8'));
 // var opt_optx = 0;
 var opt_nav = Number(fs.readFileSync('opt_nav','utf8'));
+var opt_long_nav = 0.5,opt_short_nav = 0.5;
 var aoptx = opt_optx;
 var opt_count = 0;
 var out_count = 0;
@@ -122,23 +114,27 @@ async function readFiles() {
   aapvar_err = Number(fs.readFileSync('aapvar_err','utf8'));
   aspread = Number(fs.readFileSync('aspread','utf8'));
 
+  sdelay = Number(fs.readFileSync('sdelay','utf8'));
+
   const dmid_brain_data = fs.readFileSync('dmid_brain','utf8');
   const dmid_brain_lines = dmid_brain_data.split('\n');
-  for (var i in dmid_brain) {
-    dmid_brain[i] = Number(dmid_brain_lines[i]);
-  }
+  for (var i in dmid_brain) dmid_brain[i] = Number(dmid_brain_lines[i]);
 
   const pvar_brain_data = fs.readFileSync('pvar_brain','utf8');
   const pvar_brain_lines = pvar_brain_data.split('\n');
-  for (var i in pvar_brain) {
-    pvar_brain[i] = Number(pvar_brain_lines[i]);
-  }
+  for (var i in pvar_brain) pvar_brain[i] = Number(pvar_brain_lines[i]);
+
+  fs.writeFileSync('apdmidp',apdmidp.toExponential(9) + '\n');
+  fs.writeFileSync('apvarp',apvarp.toExponential(9) + '\n');
+  fs.writeFileSync('reala',a.toExponential(9) + '\n');
+  fs.writeFileSync('realb',b.toExponential(9) + '\n');
 }
 
 async function doMain() {
+  await readFiles();
   // while (true) {
+    const run_candles = 1000;
     while (true) {
-      await readFiles();
       // console.log('a ' + a.toExponential(3) + ' ' + b.toExponential(3) + ' b');
       for (var i in v) { v[i] = 1; nv[i] = 0; }
       sellp = 1000,buyp = 0;
@@ -147,6 +143,8 @@ async function doMain() {
       balance = 1;
       nav = 1;
       max_nav = 1;
+      long_nav = 0.5;
+      short_nav = 0.5;
       max_dd = 0;
       pos = 0;
       orders_placed = 0;
@@ -155,29 +153,37 @@ async function doMain() {
       var linec = 0;
       sell_counts = [0,0,0,0,0];
       buy_counts = [0,0,0,0,0];
-      while (linec++ < 20000) await doLine();
+      while (linec++ < run_candles) await doLine();
+      // fs.renameSync('tprice','tprice0');
       // optx = nav * (1 - max_dd);
-      optx = Math.log(nav);
+      const nmonths = run_candles * sdelay / 60 / 60 / 24 / 30;
+      // console.log('nmonths ' + nmonths.toFixed(2));
       if (smode == 0) {
-        opt_optx *= 0.999;
-        opt_optx += optx / 1000;
-        fs.writeFileSync('opt_optx',opt_optx.toExponential(9) + '\n');
-        opt_nav *= 0.999;
-        opt_nav += nav / 1000;
-        fs.writeFileSync('opt_nav',opt_nav.toExponential(9) + '\n');
+        if (nav > 0) {
+          optx = Math.log(nav) / nmonths;
+          opt_optx *= 0.99999;
+          opt_optx += optx / 100000;
+          fs.writeFileSync('opt_optx',opt_optx.toExponential(9) + '\n');
+        } else opt_optx = -1;
+        // fs.renameSync('tprice0','tprice1');
+        // opt_nav *= 0.999;
+        // opt_nav += nav / 1000;
+        // fs.writeFileSync('opt_nav',opt_nav.toExponential(9) + '\n');
+        opt_long_nav *= 0.999;
+        opt_long_nav += long_nav / 1000;
+        opt_short_nav *= 0.999;
+        opt_short_nav += short_nav / 1000;
         await doFreshVector();
         smode = 1;
       } else if (smode == 1) {
         // if (balance > opt_balance) await doBigBalance();
-        if (optx > opt_optx) await doBigBalance();
+        if (nav > 0) {
+          optx = Math.log(nav) / nmonths;
+          if (optx > opt_optx) await doBigBalance();
+        }
         await doOptVector();
         smode = 0;
       }
-
-      fs.writeFileSync('apdmidp',apdmidp.toExponential(9) + '\n');
-      fs.writeFileSync('apvarp',apvarp.toExponential(9) + '\n');
-      fs.writeFileSync('reala',a.toExponential(9));
-      fs.writeFileSync('realb',b.toExponential(9));
     }
   // }
   // mainTimeout = setTimeout(() => { doMain(); }, 100000);
@@ -188,17 +194,18 @@ async function doOptVector() {
   for (var i in v) { tbuy_brain[i] = buy_brain[i]; }
   levx = opt_levx;
   sellm = opt_sellm;
-  buym = opt_buym;
+  sellf = opt_sellf;
+  // buym = opt_buym;
 
   opt_count++;
-  if (opt_count == 100) {
+  if (opt_count == 15000) {
     await doPrintLine();
     opt_count = 0;
   }
 }
 
 async function doFreshVector() {
-  const d = 10 ** (tcount + 1);
+  const d = 10 ** (tcount + 3);
   /*
   var vs = 0;
   for (var i in v) {
@@ -217,11 +224,12 @@ async function doFreshVector() {
   */
   var x = (2 * Math.random() - 1) / 2;
   levx = opt_levx * (1 + x);
-  if (levx > 0.5) levx = 0.5;
+  if (levx > 0.9) levx = 0.9;
   // levx = Math.random() / d;
   // levx = opt_levx;
   sellm = opt_sellm + (2 * Math.random() - 1) / d;
-  buym = opt_buym + (2 * Math.random() - 1) / d;
+  sellf = opt_sellf + (2 * Math.random() - 1) / 10;
+  // buym = opt_buym + (2 * Math.random() - 1) / d;
 
   tcount++;
   if (tcount == 5) tcount = 0;
@@ -229,8 +237,8 @@ async function doFreshVector() {
 
 async function doBigBalance() {
   if (optx < 1) return;
-  aoptx *= 0.99;
-  aoptx += optx / 100;
+  aoptx *= 0.9999;
+  aoptx += optx / 10000;
   if (optx < aoptx) return;
   // const d = optx - opt_optx;
   const d = 0.01;
@@ -253,58 +261,62 @@ async function doBigBalance() {
   }
   fs.writeFileSync('buy_brain',tstr);
 
-  opt_levx *= 0.99;
-  opt_levx += levx / 100;
+  opt_levx *= 0.999;
+  opt_levx += levx / 1000;
   fs.writeFileSync('opt_levx',opt_levx.toExponential(9) + '\n');
   opt_sellm *= 0.999;
   opt_sellm += sellm / 1000;
   fs.writeFileSync('sellm',opt_sellm.toExponential(9) + '\n');
+  opt_sellf *= 0.99;
+  opt_sellf += sellf / 100;
+  fs.writeFileSync('sellf',opt_sellf.toExponential(9) + '\n');
+
+  /*
   opt_buym *= 0.99;
   opt_buym += buym / 100;
   fs.writeFileSync('buym',opt_buym.toExponential(9) + '\n');
+  */
+
+  /*
   console.log(optx.toExponential(3)
     + ' ' + aoptx.toExponential(3)
     + ' ' + opt_optx.toExponential(3)
-    + ' ' + opt_nav.toExponential(3)
+    + ' ' + Math.exp(opt_optx).toExponential(3)
     + ' ' + tcount
     + ' ' + opt_levx.toExponential(3)
     + ' ' + opt_sellm.toExponential(3)
     + ' ' + opt_buym.toExponential(3)
     + ' ' + omidp.toExponential(3)
-    /*
-    + ' ' + sell_counts[0]
-    + ' ' + sell_counts[1]
-    + ' ' + sell_counts[2]
-    + ' --- ' + buy_counts[0]
-    + ' ' + buy_counts[1]
-    + ' ' + buy_counts[2]
-    */
     + ' *'
   );
   out_count++;
-  if (out_count >= 10) {
-    out_count = 0;
+  if (out_count >= 10) { out_count = 0;
     console.log('    optx    aoptx opt_optx opt_nav  tc  levx   sm   bm  midp');
   }
   opt_count = 0;
+  */
 }
 
 var trade_counts = [0,0,0,0,0];
 async function doPrintLine() {
+  await readFiles();
   out_count++;
   if (out_count >= 10) {
     out_count = 0;
-    console.log('    optx    aoptx opt_optx opt_nav  tc  levx   sm   bm  midp');
+    console.log('    aoptx opt_optx opt_nav    long    short   tc  levx   sm    sf');
   }
-  console.log(optx.toExponential(3)
-    + ' ' + aoptx.toExponential(3)
+  console.log( aoptx.toExponential(3)
     + ' ' + opt_optx.toExponential(3)
-    + ' ' + opt_nav.toExponential(3)
+    // + ' ' + opt_nav.toExponential(3)
+    + ' ' + (Math.exp(opt_optx) - 1).toExponential(3)
+    + ' ' + opt_long_nav.toExponential(3)
+    + ' ' + opt_short_nav.toExponential(3)
     + ' ' + tcount
     + ' ' + opt_levx.toExponential(3)
     + ' ' + opt_sellm.toExponential(3)
-    + ' ' + opt_buym.toExponential(3)
-    + ' ' + omidp.toExponential(3)
+    + ' ' + opt_sellf.toExponential(3)
+    // + ' ' + opt_buym.toExponential(3)
+    // + ' ' + omidp.toExponential(3)
     /*
     + ' ' + sell_counts[0]
     + ' ' + sell_counts[1]
@@ -337,34 +349,32 @@ async function doLine(line) {
   pvarp += x;
   if (pvarp < 0) pvarp = 0;
   // pvarp = 2 * Math.random() * pvarp;
+  // console.log(a,b);
   // console.log(pdmidp,pvarp);
 
   const midp = omidp * pdmidp + omidp;
   // console.log(midp,tmidp);
-  const highp = Number((midp + midp * pvarp / 2).toFixed(5));
-  const lowp = Number((midp - midp * pvarp / 2).toFixed(5));
+  const highp = midp + midp * pvarp / 2;
+  const lowp = midp - midp * pvarp / 2;
+  // fs.appendFileSync('tprice',midp.toFixed(5) + ' ' + nav.toFixed(5) + '\n');
   // console.log(highp,sellp,buyp,lowp,pvarp);
   if (orders_placed == 1) {
-    var stype = 0;
-    var btype = 0;
+    // var stype = 0;
+    // var btype = 0;
     if (highp >= sellp) {
-      // if (lowp - aspread > sellp) sellp = lowp - aspread;
-      stype = 1;
-      if (lowp <= sellp) {
-        await doSell();
-        stype = 2;
-      }
+      if (highp < sellp + aspread / 2) {
+        if (Math.random() > 0.5)
+          if (lowp <= sellp) await doSell();
+      } else if (lowp <= sellp) await doSell();
     }
     if (lowp <= buyp) {
-      // if (highp + aspread < buyp) buyp = highp + aspread;
-      btype = 1;
-      if (highp >= buyp) {
-        await doBuy();
-        btype = 2;
-      }
+      if (lowp > buyp - aspread / 2) {
+        if (Math.random() > 0.5)
+          if (highp >= buyp) await doBuy();
+      } else if (highp >= buyp) await doBuy();
     }
-    sell_counts[stype]++;
-    buy_counts[btype]++;
+    // sell_counts[stype]++;
+    // buy_counts[btype]++;
   }
   omidp = midp;
 
@@ -391,27 +401,31 @@ async function doLine(line) {
   // for (var i in nv) buym += tbuy_brain[i] * nv[i];
 
   tmidp = omidp * pdmidp + omidp;
-  sellp = tmidp + tmidp * pvarp / 2 + sellm;
+  // sellp = tmidp + tmidp * pvarp / 2 + sellm;
+  sellp = tmidp + tmidp * pvarp * sellf + sellm;
   sellp = Number(sellp.toFixed(5));
   // buyp = tmidp - tmidp * pvarp / 2 * (1 + buym);
-  buyp = tmidp - tmidp * pvarp / 2 - sellm;
+  // buyp = tmidp - tmidp * pvarp / 2 - sellm;
+  buyp = tmidp - tmidp * pvarp * sellf - sellm;
   buyp = Number(buyp.toFixed(5));
   // sellp = tmidp + tmidp * pvarp / 2;
   // buyp = tmidp - tmidp * pvarp / 2;
   // if (sellp < buyp * (1 + 2 * aspread)) {
-  if (Math.abs(sellp - buyp) < 1e-4) {
-    orders_placed = 0;
-  } else {
+  // if (Math.abs(sellp - buyp) < 1e-4) {
+    // orders_placed = 0;
+  // } else {
     orders_placed = 1;
-  }
+  // }
 
   buy_size = levx * 50 * nav / omidp - pos;
   if (buy_size < 0) buy_size = 0;
   sell_size = levx * 50 * nav / omidp + pos;
   if (sell_size < 0) sell_size = 0;
 
+  /*
   if (pdmidp > 0) sell_size = 0;
   else buy_size = 0;
+  */
 
   // sell_size = 1 + pos;
   // buy_size = 1 - pos;
@@ -432,8 +446,12 @@ async function doBuy() {
   else {
     if (pos + buy_size > 0) {
       nav -= pos * (posp - buyp);
+      short_nav -= pos * (posp - buyp);
       posp = buyp;
-    } else nav -= buy_size * (posp - buyp);
+    } else {
+      nav -= buy_size * (posp - buyp);
+      short_nav -= pos * (posp - buyp);
+    }
     if (nav < 0) nav = 0;
     if (nav > max_nav) max_nav = nav;
     else if ((max_nav - nav) / max_nav > max_dd)
@@ -449,8 +467,12 @@ async function doSell() {
   else {
     if (pos - sell_size < 0) {
       nav += pos * (sellp - posp);
+      long_nav += pos * (sellp - posp);
       posp = sellp;
-    } else nav += sell_size * (sellp - posp);
+    } else {
+      nav += sell_size * (sellp - posp);
+      long_nav += sell_size * (sellp - posp);
+    }
     if (nav < 0) nav = 0;
     if (nav > max_nav) max_nav = nav;
     else if ((max_nav - nav) / max_nav > max_dd)

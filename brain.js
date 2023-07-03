@@ -26,7 +26,7 @@ var om0 = Number(fs.readFileSync('om0','utf8'));
 var os0 = Number(fs.readFileSync('os0','utf8'));
 
 var linec = 0;
-var omidp = Number(fs.readFileSync('omidp','utf8'));
+var omidp = 0;
 var odmidp = Number(fs.readFileSync('odmidp','utf8'));
 
 var dmid_brain = [0,0,0,0,0,0];
@@ -55,17 +55,18 @@ var aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
 var aadmid_err = Number(fs.readFileSync('aadmid_err','utf8'));
 var aapvar_err = Number(fs.readFileSync('aapvar_err','utf8'));
 
-var amidp = 0;
-var amidp_d = 100;
+// var amidp = 0;
+// var amidp_d = 100;
 
 var out_count = 0;
 console.log('doMain ' + new Date());
 async function doMain() {
   // while (true) {
     var tcount = 0;
-    amidp = 0;
+    // amidp = 0;
     while (true) {
       for (var i in v) { v[i] = 1; nv[i] = 0; }
+      omidp = 0;
       // apvar = Number(fs.readFileSync('apvar','utf8'));
       // aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
       var plog_data = fs.readFileSync('plog','utf8');
@@ -117,6 +118,7 @@ async function doLine(line) {
   apvar += pvar / 10000;
 
   const midp = Number(lst[0]);
+  if (omidp == 0) omidp = midp;
   const dmidp = (midp - omidp) / omidp;
   aadmidp *= 0.9999;
   aadmidp += Math.abs(dmidp) / 10000;
