@@ -72,6 +72,8 @@ var pvarp = apvar;
 var aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
 var pdmidp = aadmidp;
 var sellm = Number(fs.readFileSync('sellm','utf8'));
+var sellf = Number(fs.readFileSync('sellf','utf8'));
+var sellf2 = Number(fs.readFileSync('sellf2','utf8'));
 var levx = Number(fs.readFileSync('opt_levx','utf8'));
 // levx /= 5;
 var pos = Number(fs.readFileSync('pos','utf8'));
@@ -89,13 +91,20 @@ var current_ask = Number(fs.readFileSync('current_ask','utf8'));
 var current_bid = Number(fs.readFileSync('current_bid','utf8'));
 
 var order_id = 0;
+// try { order_id = Number(fs.readFileSync('order_id','utf8')); } catch {}
+var sell_order_id = 0;
 try {
-  order_id = Number(fs.readFileSync('order_id','utf8'));
+  sell_order_id = Number(fs.readFileSync('sell_order_id','utf8'));
+} catch {}
+var buy_order_id = 0;
+try {
+  buy_order_id = Number(fs.readFileSync('buy_order_id','utf8'));
 } catch {}
 
 var mutex = Promise.resolve();
 var order_price = 0;
 var order_size = 0;
+var trade_str = '';
 
 var buyp = 0,sellp = 0;
 var buy_size = 0,sell_size = 0;
@@ -145,15 +154,19 @@ function doTransactions() {
   var req = https.request(transaction_options, function(res) {
     res.setEncoding('utf8');
     res.on('data', function (chunk) {
+      var str_save = '';
       var lines = chunk.split('\n');
       for (var i in lines) {
         if (lines[i].length == 0) continue;
         try {
-          const data = JSON.parse(lines[i]);
+          const tstr = str_save + lines[i];
+          const data = JSON.parse(tstr);
+          str_save = '';
           doTransData(data);
         } catch (err) {
-          console.log(err);
-          console.log('bad chunk ' + lines[i]);
+          str_save += lines[i];
+          // console.log(err);
+          // console.log('doTransactions bad chunk ' + lines[i]);
         }
       }
     });
@@ -169,21 +182,46 @@ function doTransData(data) {
   clearTimeout(transTimeout);
   transTimeout = setTimeout(() => { doTransactions(); }, 100000);
   if (data.type == 'HEARTBEAT') return;
+  if (data.type == 'MARKET_IF_TOUCHED_ORDER') {
+    if (Number(data.units) > 0) {
+      buy_order_id = Number(data.id);
+      fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+    } else {
+      sell_order_id = Number(data.id);
+      fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+    }
+    fs.writeFileSync('last_touch_order',JSON.stringify(data) + '\n');
+    return;
+  }
   if (data.type == 'LIMIT_ORDER') {
-    order_id = Number(data.id);
-    fs.writeFileSync('order_id',order_id + '\n');
+    // order_id = Number(data.id);
+    // fs.writeFileSync('order_id',order_id + '\n');
+    if (Number(data.units) > 0) {
+      buy_order_id = Number(data.id);
+      fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+    } else {
+      sell_order_id = Number(data.id);
+      fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+    }
     fs.writeFileSync('last_limit_order',JSON.stringify(data) + '\n');
-    // console.log('limit order data');
-    // console.log(data);
     return;
   }
   if (data.type == 'ORDER_FILL') {
-    if (Number(data.orderID) == order_id) {
-      // console.log('clearing order_id');
-      order_id = 0;
-      fs.writeFileSync('order_id',order_id + '\n');
-    } else {
-      console.log('must be an old order');
+    // if (Number(data.orderID) == order_id) {
+      // order_id = 0;
+      // fs.writeFileSync('order_id',order_id + '\n');
+    // }
+    if (Number(data.orderID) == sell_order_id) {
+      // console.log('sell filled ' + data.price + ' units ' + data.units);
+      sell_order_id = 0;
+      fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+      // trade_str += ' ' + data.units + ' @ ' + data.price;
+    }
+    if (Number(data.orderID) == buy_order_id) {
+      // console.log('buy filled ' + data.price + ' units ' + data.units);
+      buy_order_id = 0;
+      fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+      // trade_str += ' ' + data.units + ' @ ' + data.price;
     }
     if (withdraw_not_ready == 1) {
       console.log('withdraw ready');
@@ -232,11 +270,14 @@ function doMain() {
   var req = https.request(options, function(res) {
     res.setEncoding('utf8');
     res.on('data', function (chunk) {
+      var str_save = '';
       var lines = chunk.split('\n');
       for (var i in lines) {
         if (lines[i].length == 0) continue;
         try {
-          const data = JSON.parse(lines[i]);
+          const tstr = str_save + lines[i];
+          const data = JSON.parse(tstr);
+          str_save = '';
           mutex = mutex.then(async () => {
             await doChunk(data);
           }).catch((e) => {
@@ -244,8 +285,9 @@ function doMain() {
             console.log(data);
           });
         } catch (err) {
+          str_save += lines[i];
           console.log(err);
-          console.log('bad chunk ' + lines[i]);
+          console.log('doMain bad chunk ' + lines[i]);
         }
       }
     });
@@ -325,12 +367,12 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
 
   apvar = Number(fs.readFileSync('apvar','utf8'));
   aspread = Number(fs.readFileSync('aspread','utf8'));
-  if (apvar < 2 * aspread) sdelay *= 1.001;
-  else sdelay *= 0.999;
+  if (apvar < 2 * aspread) sdelay *= 1.0001;
+  else sdelay *= 0.9999;
   fs.writeFileSync('sdelay',sdelay.toExponential(9) + '\n');
 
   if (linec == 0) {
-    console.log('    pvar    delay    bids    asks   close       nav  pos    utc');
+    console.log('    pvar    delay    bids    asks     nav     utc');
   }
   linec++; if (linec == 9) linec = 0;
   const closep = (current_ask + current_bid) / 2;
@@ -339,24 +381,24 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
     + ' ' + sdelay.toExponential(3)
     + ' ' + maxb.toFixed(5)
     + ' ' + maxa.toFixed(5)
-    + ' ' + closep.toFixed(5)
+    // + ' ' + closep.toFixed(5)
     + ' ' + nav.toExponential(4);
-  if (pos > 0) tstr += ' ';
-  tstr += ' ' + pos.toFixed(0) + ' ';
+  // if (pos > 0) tstr += ' ';
+  // tstr += ' ' + pos.toFixed(0) + ' ';
+  tstr += ' ';
   if (nh0 < 10) tstr += '0';
-  tstr +=  nh0.toFixed() + ':';
+  tstr += nh0.toFixed() + ':';
   if (nm0 < 10) tstr += '0';
   tstr += nm0.toFixed() + ':';
   if (ns0 < 9.5) tstr += '0';
-  tstr += ns0.toFixed()
-    + ' --- ' + order_price.toFixed(5)
-    + ' ' + order_size.toFixed()
-    ;
-  if (miss_type > 0) {
-    tstr += ' <- ' + miss_counts[0] + ' ' + miss_counts[2];
-  }
-  console.log(tstr);
+  tstr += ns0.toFixed() + ' --- ' + trade_str;
+  // if (miss_type > 0) {
+    // tstr += ' <- ' + miss_counts[0] + ' ' + miss_counts[2];
+  // }
+  trade_str = '';
   fs.appendFileSync('log',tstr + '\n');
+  if (pvar > 0) tstr = ' ' + tstr;
+  console.log(tstr);
   oh0 = nh0; fs.writeFileSync('oh0',oh0.toFixed() + '\n');
   om0 = nm0; fs.writeFileSync('om0',om0.toFixed() + '\n');
   os0 = ns0; fs.writeFileSync('os0',os0.toFixed() + '\n');
@@ -388,16 +430,50 @@ async function doTrade(midp,pvar) {
   if (pvarp < 0) pvarp = 0;
 
   const tmidp = midp * pdmidp + midp;
-  sellp = Number((tmidp + tmidp * pvarp / 2 + sellm).toFixed(5));
-  buyp = Number((tmidp - tmidp * pvarp / 2 - sellm).toFixed(5));
+  // sellp = Number((tmidp + tmidp * pvarp / 2 + sellm).toFixed(5));
+  sellp = Number((tmidp
+    + midp * pdmidp * sellf2
+    + tmidp * pvarp * sellf
+    + sellm).toFixed(5));
+  buyp = Number((tmidp
+    - midp * pdmidp * sellf2
+    - tmidp * pvarp * sellf
+    - sellm).toFixed(5));
   // if (Math.abs(sellp - buyp) < 1e-4) return;
+  // if (sellp < buyp) { var tp = sellp; sellp = buyp; buyp = tp; }
 
+  buy_size = levx * 50 * nav / midp;
+  sell_size = buy_size;
+  if (pos > 0) { buy_size = 0; sell_size = pos; }
+  if (pos < 0) { sell_size = 0; buy_size = -pos; }
+  buy_size = Number(buy_size.toFixed());
+  sell_size = Number(sell_size.toFixed());
+  if (sell_size > 0) {
+    trade_str += ' ' + (-sell_size).toFixed() + ' ' + sellp;
+    order_id = sell_order_id;
+    // if (sellp < buyp) {
+      // sell_size = -buy_size;
+      // order_id = buy_order_id;
+    // }
+    if (order_id == 0) await doOrder(sellp,-sell_size);
+    else await doUpdateOrder(sellp,-sell_size);
+  }
+  if (buy_size > 0) {
+    trade_str += ' ' + buy_size.toFixed() + ' ' + buyp;
+    order_id = buy_order_id;
+    // if (sellp < buyp) {
+      // buy_size = -sell_size;
+      // order_id = sell_order_id;
+    // }
+    if (order_id == 0) await doOrder(buyp,buy_size);
+    else await doUpdateOrder(buyp,buy_size);
+  }
+
+  /*
   buy_size = levx * 50 * nav / midp - pos;
   if (buy_size < 0) buy_size = 0;
   sell_size = levx * 50 * nav / midp + pos;
   if (sell_size < 0) sell_size = 0;
-  // if (pdmidp > 0) sell_size = 0;
-  // else buy_size = 0;
   buy_size = Number(buy_size.toFixed());
   sell_size = Number(sell_size.toFixed());
   if (sell_size > buy_size) {
@@ -417,11 +493,13 @@ async function doTrade(midp,pvar) {
     order_price = buyp;
     order_size = buy_size;
   }
+  */
 
   fs.writeFileSync('omidp',omidp.toExponential(9) + '\n');
 }
 
 async function doUpdateOrder(price,size) {
+  if (Number(size.toFixed()) == 0) return;
   const update_path = order_path + '/' + order_id.toFixed();
   const update_options = {
     host: 'api-fxtrade.oanda.com',
@@ -445,8 +523,9 @@ async function doUpdateOrder(price,size) {
       try {
         const data = JSON.parse(clean_chunk);
         if (clean_chunk.indexOf('REJECT') >= 0) doOrder(price,size);
-        if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
-        if (body.type == "MARKET_IF_TOUCHED") console.log(data);
+        // if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
+        // if (body.order.type == "MARKET_IF_TOUCHED") console.log(data);
+        fs.writeFileSync('last_do_update_order',clean_chunk + '\n');
         // console.log('doUpdateOrder data ' + order_id + ' ' + price + ' ' + size);
       } catch (e) { console.log(e); }
     });
@@ -465,15 +544,15 @@ async function doUpdateOrder(price,size) {
   }
   if (size > 0) {
     if (price >= current_ask) {
-      body.type = "MARKET_IF_TOUCHED";
-      console.log('doUpdateOrder TOUCHED buy');
-      console.log(body);
+      body.order.type = "MARKET_IF_TOUCHED";
+      // console.log('doUpdateOrder TOUCHED buy');
+      // console.log(body);
     }
   } else {
     if (price <= current_bid) {
-      body.type = "MARKET_IF_TOUCHED";
-      console.log('doUpdateOrder TOUCHED sell');
-      console.log(body);
+      body.order.type = "MARKET_IF_TOUCHED";
+      // console.log('doUpdateOrder TOUCHED sell');
+      // console.log(body);
     }
   }
   req.write(JSON.stringify(body) + '\n');
@@ -481,6 +560,7 @@ async function doUpdateOrder(price,size) {
 }
 
 async function doOrder(price,size) {
+  if (Number(size.toFixed()) == 0) return;
   // console.log(order_options);
   var clean_chunk = '';
   var req = https.request(order_options, function(res) {
@@ -494,8 +574,9 @@ async function doOrder(price,size) {
       try {
         const data = JSON.parse(clean_chunk);
         if (clean_chunk.indexOf('REJECT') >= 0) console.log(data);
-        if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
-        if (body.type == "MARKET_IF_TOUCHED") console.log(data);
+        // if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
+        // if (body.order.type == "MARKET_IF_TOUCHED") console.log(data);
+        fs.writeFileSync('last_do_order',clean_chunk + '\n');
         // console.log('doOrder data ' + price + ' ' + size);
         // console.log(data);
       } catch (e) { console.log(e); }
@@ -514,15 +595,15 @@ async function doOrder(price,size) {
   }
   if (size > 0) {
     if (price >= current_ask) {
-      body.type = "MARKET_IF_TOUCHED";
-      console.log('doOrder TOUCHED buy');
-      console.log(body);
+      body.order.type = "MARKET_IF_TOUCHED";
+      // console.log('doOrder TOUCHED buy');
+      // console.log(body);
     }
   } else {
     if (price <= current_bid) {
-      body.type = "MARKET_IF_TOUCHED";
-      console.log('doOrder TOUCHED sell');
-      console.log(body);
+      body.order.type = "MARKET_IF_TOUCHED";
+      // console.log('doOrder TOUCHED sell');
+      // console.log(body);
     }
   }
   req.write(JSON.stringify(body) + '\n');
@@ -533,6 +614,8 @@ async function readFiles() {
   apvar = Number(fs.readFileSync('apvar','utf8'));
   aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
   sellm = Number(fs.readFileSync('sellm','utf8'));
+  sellf = Number(fs.readFileSync('sellf','utf8'));
+  sellf2 = Number(fs.readFileSync('sellf2','utf8'));
   levx = Number(fs.readFileSync('opt_levx','utf8'));
   // levx /= 5;
 
