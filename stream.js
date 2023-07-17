@@ -43,6 +43,15 @@ const order_options = {
     "Authorization": api_key,
   },
 }
+const get_order_options = {
+  host: 'api-fxtrade.oanda.com',
+  path: order_path,
+  method: 'GET',
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": api_key,
+  },
+}
 
 var maxb = Number(fs.readFileSync('maxb','utf8'));
 var maxa = Number(fs.readFileSync('maxa','utf8'));
@@ -66,7 +75,13 @@ const pvar_brain_data = fs.readFileSync('pvar_brain','utf8');
 const pvar_brain_lines = pvar_brain_data.split('\n');
 for (var i in pvar_brain) pvar_brain[i] = Number(pvar_brain_lines[i]);
 
-var v = [0,0,0,0,0,0],nv = [0,0,0,0,0,0];
+var v = [1,1,1,1,1,1],nv = [0,0,0,0,0,0];
+try {
+  const v_data = fs.readFileSync('main_vec','utf8');
+  const v_lines = v_data.split('\n');
+  for (var i in v) v[i] = Number(v_lines[i]);
+} catch {}
+
 var apvar = Number(fs.readFileSync('apvar','utf8'));
 var pvarp = apvar;
 var aadmidp = Number(fs.readFileSync('aadmidp','utf8'));
@@ -92,16 +107,13 @@ var current_bid = Number(fs.readFileSync('current_bid','utf8'));
 
 var order_id = 0;
 // try { order_id = Number(fs.readFileSync('order_id','utf8')); } catch {}
-var sell_order_id = 0;
-try {
-  sell_order_id = Number(fs.readFileSync('sell_order_id','utf8'));
-} catch {}
-var buy_order_id = 0;
-try {
-  buy_order_id = Number(fs.readFileSync('buy_order_id','utf8'));
-} catch {}
+var sell_order_id = Number(fs.readFileSync('sell_order_id','utf8'));
+var buy_order_id = Number(fs.readFileSync('buy_order_id','utf8'));
 
 var mutex = Promise.resolve();
+var mutexc = 0;
+var max_mutexc = 0;
+
 var order_price = 0;
 var order_size = 0;
 var trade_str = '';
@@ -109,6 +121,12 @@ var trade_str = '';
 var buyp = 0,sellp = 0;
 var buy_size = 0,sell_size = 0;
 const miss_counts = [0,0,0,0];
+
+var buy_order_touch = Number(fs.readFileSync('buy_order_touch','utf8'));
+var sell_order_touch = Number(fs.readFileSync('sell_order_touch','utf8'));
+
+var apdmidp = Number(fs.readFileSync('apdmidp','utf8'));
+var apvarp = Number(fs.readFileSync('apvarp','utf8'));
 
 function doSummary() {
   console.log('doSummary');
@@ -138,6 +156,10 @@ function doSummary() {
         }
         fs.writeFileSync('nav',nav.toExponential(9) + '\n');
         fs.writeFileSync('pos',pos.toFixed() + '\n');
+        if (nav_mark == 0) {
+          nav_mark = nav;
+          fs.writeFileSync('nav_mark',nav_mark.toExponential(9) + '\n');
+        }
         // console.log('total pos ' + pos);
       } catch (e) { console.log(e); }
     });
@@ -162,11 +184,19 @@ function doTransactions() {
           const tstr = str_save + lines[i];
           const data = JSON.parse(tstr);
           str_save = '';
-          doTransData(data);
+          mutexc++;
+          if (mutexc > max_mutexc) {
+            max_mutexc = mutexc;
+            console.log('max_mutexc ' + max_mutexc);
+          }
+          mutex = mutex.then(async () => {
+            await doTransData(data);
+            mutexc--;
+          // }).finally(async () => {
+            // if (mutexc > 0) console.log('got mutexc ' + mutexc);
+          });
         } catch (err) {
           str_save += lines[i];
-          // console.log(err);
-          // console.log('doTransactions bad chunk ' + lines[i]);
         }
       }
     });
@@ -178,51 +208,21 @@ function doTransactions() {
   req.end();
 }
 
-function doTransData(data) {
+async function doTransData(data) {
   clearTimeout(transTimeout);
   transTimeout = setTimeout(() => { doTransactions(); }, 100000);
-  if (data.type == 'HEARTBEAT') return;
-  if (data.type == 'MARKET_IF_TOUCHED_ORDER') {
-    if (Number(data.units) > 0) {
-      buy_order_id = Number(data.id);
-      fs.writeFileSync('buy_order_id',buy_order_id + '\n');
-    } else {
-      sell_order_id = Number(data.id);
-      fs.writeFileSync('sell_order_id',sell_order_id + '\n');
-    }
-    fs.writeFileSync('last_touch_order',JSON.stringify(data) + '\n');
-    return;
-  }
-  if (data.type == 'LIMIT_ORDER') {
-    // order_id = Number(data.id);
-    // fs.writeFileSync('order_id',order_id + '\n');
-    if (Number(data.units) > 0) {
-      buy_order_id = Number(data.id);
-      fs.writeFileSync('buy_order_id',buy_order_id + '\n');
-    } else {
-      sell_order_id = Number(data.id);
-      fs.writeFileSync('sell_order_id',sell_order_id + '\n');
-    }
-    fs.writeFileSync('last_limit_order',JSON.stringify(data) + '\n');
-    return;
-  }
   if (data.type == 'ORDER_FILL') {
-    // if (Number(data.orderID) == order_id) {
-      // order_id = 0;
-      // fs.writeFileSync('order_id',order_id + '\n');
-    // }
     if (Number(data.orderID) == sell_order_id) {
-      // console.log('sell filled ' + data.price + ' units ' + data.units);
       sell_order_id = 0;
       fs.writeFileSync('sell_order_id',sell_order_id + '\n');
-      // trade_str += ' ' + data.units + ' @ ' + data.price;
-    }
-    if (Number(data.orderID) == buy_order_id) {
-      // console.log('buy filled ' + data.price + ' units ' + data.units);
+    } else if (Number(data.orderID) == buy_order_id) {
       buy_order_id = 0;
       fs.writeFileSync('buy_order_id',buy_order_id + '\n');
-      // trade_str += ' ' + data.units + ' @ ' + data.price;
+    } else {
+      console.log('so wtf is this');
+      console.log(data);
     }
+
     if (withdraw_not_ready == 1) {
       console.log('withdraw ready');
       withdraw_not_ready = 0;
@@ -231,10 +231,10 @@ function doTransData(data) {
     nav = Number(data.accountBalance);
     nav -= nav_withdraw;
 
-    if (nav > 2 * nav_mark) {
-      nav_withdraw += nav * 0.25;
+    if (nav > 4 * nav_mark) {
+      nav_withdraw += nav * 0.5;
       fs.writeFileSync('nav_withdraw',nav_withdraw.toExponential(4) + '\n');
-      nav *= 0.75;
+      nav *= 0.5;
       nav_mark = nav;
       fs.writeFileSync('nav_mark',nav_mark.toExponential(9) + '\n');
       withdraw_not_ready = 1;
@@ -244,50 +244,147 @@ function doTransData(data) {
     }
     fs.writeFileSync('nav',nav.toExponential(9) + '\n');
     pos += Number(data.units);
+    // console.log('new pos ' + pos);
     fs.writeFileSync('pos',pos.toFixed() + '\n');
     fs.writeFileSync('last_order_fill',JSON.stringify(data) + '\n');
     // console.log('order fill data');
     // console.log(data);
+    fs.appendFileSync('last_trans','------------\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    return;
+  }
+  if (data.type == 'HEARTBEAT') return;
+  if (data.type == 'MARKET_IF_TOUCHED_ORDER') {
+    if (Number(data.units) > 0) {
+      if (buy_order_id == Number(data.id)) {
+        // okay
+      } else {
+        buy_order_id = Number(data.id);
+        fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+        buy_order_touch = 1;
+        fs.writeFileSync('buy_order_touch',buy_order_touch + '\n');
+        // console.log('catching buy_order_id ' + buy_order_id + ' in trans');
+      }
+    } else {
+      if (sell_order_id == Number(data.id)) {
+        // okay
+      } else {
+        sell_order_id = Number(data.id);
+        fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+        sell_order_touch = 1;
+        fs.writeFileSync('sell_order_touch',sell_order_touch + '\n');
+        // console.log('catching sell_order_id ' + sell_order_id + ' in trans');
+      }
+    }
+    fs.writeFileSync('last_touch_order',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    return;
+  }
+  if (data.type == 'LIMIT_ORDER') {
+    // order_id = Number(data.id);
+    // fs.writeFileSync('order_id',order_id + '\n');
+    if (Number(data.units) > 0) {
+      if (buy_order_id == Number(data.id)) {
+        // okay
+      } else {
+        buy_order_id = Number(data.id);
+        fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+        buy_order_touch = 0;
+        fs.writeFileSync('buy_order_touch',buy_order_touch + '\n');
+        // console.log('catching buy_order_id ' + buy_order_id + ' in trans');
+      }
+    } else {
+      if (sell_order_id == Number(data.id)) {
+        // okay
+      } else {
+        sell_order_id = Number(data.id);
+        fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+        sell_order_touch = 0;
+        fs.writeFileSync('sell_order_touch',sell_order_touch + '\n');
+        // console.log('catching sell_order_id ' + sell_order_id + ' in trans');
+      }
+    }
+    fs.writeFileSync('last_limit_order',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    return;
+  }
+  if (data.type == 'TRANSFER_FUNDS') {
+    nav = Number(data.accountBalance);
+    nav_withdraw = 0;
+    nav_mark = nav;
+    fs.writeFileSync('nav',nav.toExponential(9) + '\n');
+    fs.writeFileSync('nav_withdraw',nav_withdraw.toExponential(4) + '\n');
+    fs.writeFileSync('nav_mark',nav_mark.toExponential(9) + '\n');
     return;
   }
   if (data.type == 'DAILY_FINANCING') {
+    console.log(data);
     return;
   }
   if (data.type == 'ORDER_CANCEL') {
+    if (data.reason == 'CLIENT_REQUEST_REPLACED') {
+    } else if (data.reason == 'CLIENT_REQUEST') {
+      console.log('got trans order cancel client request');
+      console.log(data);
+    } else {
+      console.log('here is the other cancel');
+      console.log(data);
+      /*
+      if (Number(data.orderID) == buy_order_id) {
+        console.log('should order the buy');
+        doOrder(buyp,buy_size);
+      }
+      if (Number(data.orderID) == sell_order_id) {
+        console.log('should order the sell');
+        doOrder(sellp,-sell_size);
+      }
+      */
+    }
     fs.writeFileSync('last_order_cancel',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'ORDER_CANCEL_REJECT') {
+    console.log('got trans cancel reject');
     fs.writeFileSync('last_order_cancel_reject',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   console.log('transactions data');
   console.log(data);
+  fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
 }
 
+var main_json = '';
 function doMain() {
   console.log('doMain ' + new Date());
   var req = https.request(options, function(res) {
     res.setEncoding('utf8');
-    res.on('data', function (chunk) {
-      var str_save = '';
-      var lines = chunk.split('\n');
+    res.on('data', function (sum_chunk) {
+      const lines = sum_chunk.split('\n');
       for (var i in lines) {
         if (lines[i].length == 0) continue;
         try {
-          const tstr = str_save + lines[i];
-          const data = JSON.parse(tstr);
-          str_save = '';
+          main_json += lines[i];
+          const data = JSON.parse(main_json);
+          main_json = '';
+          mutexc++;
+          if (mutexc > max_mutexc) {
+            max_mutexc = mutexc;
+            console.log('max_mutexc ' + max_mutexc);
+          }
           mutex = mutex.then(async () => {
             await doChunk(data);
+            mutexc--;
           }).catch((e) => {
             console.log('catch data ' + e);
             console.log(data);
+          // }).finally(async () => {
+            // if (mutexc > 0) console.log('got mutexc ' + mutexc);
           });
-        } catch (err) {
-          str_save += lines[i];
-          console.log(err);
-          console.log('doMain bad chunk ' + lines[i]);
+        } catch (e) { console.log(e);
+          console.log('doMain bad chunk ' + main_json);
+          main_json = '';
         }
       }
     });
@@ -328,6 +425,7 @@ async function doChunk(data) {
   fs.writeFileSync('maxb',maxb.toFixed(6) + '\n');
 }
 
+var ordersTimeout;
 async function doMadeDelay( nh0,nm0,ns0 ) {
   const spread = 2 * (current_ask - current_bid) / (current_ask + current_bid);
   const midp = (maxb + maxa) / 2;
@@ -358,11 +456,22 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
     + '\n';
   fs.appendFileSync('plog',pstr);
 
-  const new_pstr = current_bid.toFixed(5)
+  var time_str = '';
+  if (nh0 < 10) time_str += '0';
+  time_str += nh0.toFixed() + ':';
+  if (nm0 < 10) time_str += '0';
+  time_str += nm0.toFixed() + ':';
+  if (ns0 < 9.5) time_str += '0';
+  time_str += ns0.toFixed();
+  var new_pstr = time_str
+    + ' ' + current_bid.toFixed(5)
     + ' ' + current_ask.toFixed(5)
     + ' ' + maxb.toFixed(5)
-    + ' ' + maxa.toFixed(5)
-    + '\n';
+    + ' ' + maxa.toFixed(5);
+  if (buy_size > 0) new_pstr += ' ' + buyp.toFixed(5);
+  else new_pstr += ' 0';
+  if (sell_size > 0) new_pstr += ' ' + sellp.toFixed(5) + '\n';
+  else new_pstr += ' 0\n';
   fs.appendFileSync('new_plog',new_pstr);
 
   apvar = Number(fs.readFileSync('apvar','utf8'));
@@ -385,19 +494,14 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
     + ' ' + nav.toExponential(4);
   // if (pos > 0) tstr += ' ';
   // tstr += ' ' + pos.toFixed(0) + ' ';
-  tstr += ' ';
-  if (nh0 < 10) tstr += '0';
-  tstr += nh0.toFixed() + ':';
-  if (nm0 < 10) tstr += '0';
-  tstr += nm0.toFixed() + ':';
-  if (ns0 < 9.5) tstr += '0';
-  tstr += ns0.toFixed() + ' --- ' + trade_str;
+  tstr += ' ' + time_str;
+  tstr += ' --- ' + trade_str;
   // if (miss_type > 0) {
     // tstr += ' <- ' + miss_counts[0] + ' ' + miss_counts[2];
   // }
   trade_str = '';
   fs.appendFileSync('log',tstr + '\n');
-  if (pvar > 0) tstr = ' ' + tstr;
+  if (pvar >= 0) tstr = ' ' + tstr;
   console.log(tstr);
   oh0 = nh0; fs.writeFileSync('oh0',oh0.toFixed() + '\n');
   om0 = nm0; fs.writeFileSync('om0',om0.toFixed() + '\n');
@@ -406,6 +510,8 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
   maxb = current_bid;
 
   await readFiles();
+  ordersTimeout = setTimeout(() => { doGetOrders(); }, sdelay / 2 * 1000);
+  // await doGetOrders();
 }
 
 async function doTrade(midp,pvar) {
@@ -414,7 +520,8 @@ async function doTrade(midp,pvar) {
 
   v[5] = v[4];
   v[4] = v[3];
-  v[3] = pvarp / apvar;
+  // v[3] = pvarp / apvar;
+  v[3] = pvar / apvar;
   v[2] = 1;
   v[1] = v[0];
   v[0] = dmidp / aadmidp;
@@ -425,9 +532,12 @@ async function doTrade(midp,pvar) {
 
   pdmidp = 0;
   for (var i in nv) pdmidp += dmid_brain[i] * nv[i];
+  pdmidp *= aadmidp / apdmidp;
+
   pvarp = 0;
   for (var i in nv) pvarp += pvar_brain[i] * nv[i];
   if (pvarp < 0) pvarp = 0;
+  pvarp *= apvar / apvarp;
 
   const tmidp = midp * pdmidp + midp;
   // sellp = Number((tmidp + tmidp * pvarp / 2 + sellm).toFixed(5));
@@ -442,32 +552,18 @@ async function doTrade(midp,pvar) {
   // if (Math.abs(sellp - buyp) < 1e-4) return;
   // if (sellp < buyp) { var tp = sellp; sellp = buyp; buyp = tp; }
 
-  buy_size = levx * 50 * nav / midp;
+  buy_size = Number((levx * 50 * nav / midp).toFixed());
   sell_size = buy_size;
   if (pos > 0) { buy_size = 0; sell_size = pos; }
   if (pos < 0) { sell_size = 0; buy_size = -pos; }
-  buy_size = Number(buy_size.toFixed());
-  sell_size = Number(sell_size.toFixed());
   if (sell_size > 0) {
-    trade_str += ' ' + (-sell_size).toFixed() + ' ' + sellp;
-    order_id = sell_order_id;
-    // if (sellp < buyp) {
-      // sell_size = -buy_size;
-      // order_id = buy_order_id;
-    // }
-    if (order_id == 0) await doOrder(sellp,-sell_size);
-    else await doUpdateOrder(sellp,-sell_size);
-  }
+    if (sell_order_id == 0) await doOrder(sellp,-sell_size);
+    else await doUpdateOrder(sellp,-sell_size,sell_order_id,sell_order_touch);
+  } else if (sell_order_id > 0) await doCancelAll(sell_order_id);
   if (buy_size > 0) {
-    trade_str += ' ' + buy_size.toFixed() + ' ' + buyp;
-    order_id = buy_order_id;
-    // if (sellp < buyp) {
-      // buy_size = -sell_size;
-      // order_id = sell_order_id;
-    // }
-    if (order_id == 0) await doOrder(buyp,buy_size);
-    else await doUpdateOrder(buyp,buy_size);
-  }
+    if (buy_order_id == 0) await doOrder(buyp,buy_size);
+    else await doUpdateOrder(buyp,buy_size,buy_order_id,buy_order_touch);
+  } else if (buy_order_id > 0) await doCancelAll(buy_order_id);
 
   /*
   buy_size = levx * 50 * nav / midp - pos;
@@ -498,9 +594,8 @@ async function doTrade(midp,pvar) {
   fs.writeFileSync('omidp',omidp.toExponential(9) + '\n');
 }
 
-async function doUpdateOrder(price,size) {
-  if (Number(size.toFixed()) == 0) return;
-  const update_path = order_path + '/' + order_id.toFixed();
+async function doCancelAll(order_id) {
+  const update_path = order_path + '/' + order_id;
   const update_options = {
     host: 'api-fxtrade.oanda.com',
     path: update_path,
@@ -512,6 +607,77 @@ async function doUpdateOrder(price,size) {
   };
 
   var clean_chunk = '';
+  const cancel_path = update_path + '/cancel';
+  update_options.path = cancel_path;
+  var req = https.request(update_options, function(res) {
+    res.setEncoding('utf8');
+    res.on('data', function (sum_chunk) {
+      const lines = sum_chunk.split('\n');
+      clean_chunk += lines.join('');
+    });
+    res.on('end', function() {
+      try {
+        const data = JSON.parse(clean_chunk);
+        // console.log('cancel all ' + order_id);
+        // console.log(data);
+        if (clean_chunk.indexOf('REJECT') >= 0) {
+          // console.log('cancel all reject');
+        }
+      } catch (e) { console.log(e); }
+    });
+  });
+  req.on('error', function(e) {
+    console.log('problem with request: ' + e.message);
+  });
+
+  // req.write('data\n');
+  req.end();
+}
+
+async function doUpdateOrder(price,size,order_id,order_touch) {
+  console.log('doUpdateOrder ' + price + ' ' + size + ' ' + order_id + ' ' + order_touch);
+  if (size == 0) return;
+  const body = {
+    order: {
+      price: price.toFixed(5),
+      instrument: "EUR_USD",
+      units: size.toFixed(),
+      type: "LIMIT",
+    }
+  }
+  var torder_touch = 0;
+  if (size > 0) {
+    if (price >= current_ask) {
+      torder_touch = 1;
+      body.order.type = "MARKET_IF_TOUCHED";
+    }
+  } else {
+    if (price <= current_bid) {
+      torder_touch = 1;
+      body.order.type = "MARKET_IF_TOUCHED";
+    }
+  }
+  const update_path = order_path + '/' + order_id.toFixed();
+  const update_options = {
+    host: 'api-fxtrade.oanda.com',
+    path: update_path,
+    method: 'PUT',
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": api_key,
+    },
+  };
+
+  var cancel_first = 0;
+  var clean_chunk = '';
+  if (order_touch != torder_touch) {
+    const cancel_path = update_path + '/cancel';
+    update_options.path = cancel_path;
+    cancel_first = 1;
+  } else {
+    trade_str += ' ' + size + ' ' + price;
+    if (torder_touch == 1) trade_str += ' <--';
+  }
   var req = https.request(update_options, function(res) {
     res.setEncoding('utf8');
     res.on('data', function (sum_chunk) {
@@ -523,10 +689,36 @@ async function doUpdateOrder(price,size) {
       try {
         const data = JSON.parse(clean_chunk);
         if (clean_chunk.indexOf('REJECT') >= 0) doOrder(price,size);
+        else if (cancel_first == 1) {
+          console.log('cancel_first == 1');
+          doOrder(price,size);
+        }
+        else {
+          var id = Number(data.orderCreateTransaction.id);
+          if (size > 0) {
+            if (id == buy_order_id) {
+              // okay
+            } else {
+              buy_order_id = id;
+              fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+              buy_order_touch = torder_touch;
+              fs.writeFileSync('buy_order_touch',buy_order_touch + '\n');
+            }
+          }
+          if (size < 0) {
+            if (id == sell_order_id) {
+              // okay
+            } else {
+              sell_order_id = id;
+              fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+              sell_order_touch = torder_touch;
+              fs.writeFileSync('sell_order_touch',sell_order_touch + '\n');
+            }
+          }
+        }
         // if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
         // if (body.order.type == "MARKET_IF_TOUCHED") console.log(data);
         fs.writeFileSync('last_do_update_order',clean_chunk + '\n');
-        // console.log('doUpdateOrder data ' + order_id + ' ' + price + ' ' + size);
       } catch (e) { console.log(e); }
     });
   });
@@ -534,6 +726,13 @@ async function doUpdateOrder(price,size) {
     console.log('problem with request: ' + e.message);
   });
 
+  req.write(JSON.stringify(body) + '\n');
+  req.end();
+}
+
+async function doOrder(price,size) {
+  console.log('doOrder ' + price + ' ' + size);
+  if (size == 0) return;
   const body = {
     order: {
       price: price.toFixed(5),
@@ -542,25 +741,20 @@ async function doUpdateOrder(price,size) {
       type: "LIMIT",
     }
   }
+  var torder_touch = 0;
   if (size > 0) {
     if (price >= current_ask) {
+      torder_touch = 1;
       body.order.type = "MARKET_IF_TOUCHED";
-      // console.log('doUpdateOrder TOUCHED buy');
-      // console.log(body);
     }
   } else {
     if (price <= current_bid) {
+      torder_touch = 1;
       body.order.type = "MARKET_IF_TOUCHED";
-      // console.log('doUpdateOrder TOUCHED sell');
-      // console.log(body);
     }
   }
-  req.write(JSON.stringify(body) + '\n');
-  req.end();
-}
-
-async function doOrder(price,size) {
-  if (Number(size.toFixed()) == 0) return;
+  trade_str += ' ' + size + ' ' + price;
+  if (torder_touch == 1) trade_str += ' <--';
   // console.log(order_options);
   var clean_chunk = '';
   var req = https.request(order_options, function(res) {
@@ -574,6 +768,29 @@ async function doOrder(price,size) {
       try {
         const data = JSON.parse(clean_chunk);
         if (clean_chunk.indexOf('REJECT') >= 0) console.log(data);
+        else {
+          var id = Number(data.orderCreateTransaction.id);
+          if (size > 0) {
+            if (id == buy_order_id) {
+              // okay
+            } else {
+              buy_order_id = id;
+              fs.writeFileSync('buy_order_id',buy_order_id + '\n');
+              buy_order_touch = torder_touch;
+              fs.writeFileSync('buy_order_touch',buy_order_touch + '\n');
+            }
+          }
+          if (size < 0) {
+            if (id == sell_order_id) {
+              // okay
+            } else {
+              sell_order_id = id;
+              fs.writeFileSync('sell_order_id',sell_order_id + '\n');
+              sell_order_touch = torder_touch;
+              fs.writeFileSync('sell_order_touch',sell_order_touch + '\n');
+            }
+          }
+        }
         // if (clean_chunk.indexOf('TOUCHED') >= 0) console.log(data);
         // if (body.order.type == "MARKET_IF_TOUCHED") console.log(data);
         fs.writeFileSync('last_do_order',clean_chunk + '\n');
@@ -585,28 +802,41 @@ async function doOrder(price,size) {
   req.on('error', function(e) {
     console.log('problem with request: ' + e.message);
   });
-  const body = {
-    order: {
-      price: price.toFixed(5),
-      instrument: "EUR_USD",
-      units: size.toFixed(),
-      type: "LIMIT",
-    }
-  }
-  if (size > 0) {
-    if (price >= current_ask) {
-      body.order.type = "MARKET_IF_TOUCHED";
-      // console.log('doOrder TOUCHED buy');
-      // console.log(body);
-    }
-  } else {
-    if (price <= current_bid) {
-      body.order.type = "MARKET_IF_TOUCHED";
-      // console.log('doOrder TOUCHED sell');
-      // console.log(body);
-    }
-  }
   req.write(JSON.stringify(body) + '\n');
+  req.end();
+}
+
+async function doGetOrders() {
+  // console.log('get orders');
+  var clean_chunk = '';
+  var req = https.request(get_order_options, function(res) {
+    res.setEncoding('utf8');
+    res.on('data', function (sum_chunk) {
+      const lines = sum_chunk.split('\n');
+      clean_chunk += lines.join('');
+    });
+    res.on('end', function() {
+      // console.log(clean_chunk);
+      try {
+        const data = JSON.parse(clean_chunk);
+        // console.log(data);
+        for (var i of data.orders) {
+          if (Number(i.id) == buy_order_id) {
+            // okay
+          } else if (Number(i.id) == sell_order_id) {
+            // okay
+          } else {
+            console.log('why in the wholy hell is this');
+            console.log(i);
+            doCancelAll(i.id);
+          }
+        }
+      } catch (e) { console.log(e); }
+    });
+  });
+  req.on('error', function(e) {
+    console.log('problem with request: ' + e.message);
+  });
   req.end();
 }
 
@@ -623,6 +853,9 @@ async function readFiles() {
   aapvar_err = Number(fs.readFileSync('aapvar_err','utf8'));
   aspread = Number(fs.readFileSync('aspread','utf8'));
 
+  apdmidp = Number(fs.readFileSync('apdmidp','utf8'));
+  apvarp = Number(fs.readFileSync('apvarp','utf8'));
+
   const dmid_brain_data = fs.readFileSync('dmid_brain','utf8');
   const dmid_brain_lines = dmid_brain_data.split('\n');
   for (var i in dmid_brain) dmid_brain[i] = Number(dmid_brain_lines[i]);
@@ -630,12 +863,17 @@ async function readFiles() {
   const pvar_brain_data = fs.readFileSync('pvar_brain','utf8');
   const pvar_brain_lines = pvar_brain_data.split('\n');
   for (var i in pvar_brain) pvar_brain[i] = Number(pvar_brain_lines[i]);
+
+  var tstr = '';
+  for (var i in nv) tstr += v[i].toExponential(9) + '\n';
+  fs.writeFileSync('main_vec',tstr);
 }
 
 readFiles();
 
 // doMain();
 doSummary();
+doGetOrders();
 var mainTimeout = setTimeout(() => { doMain(); }, 9000);
 
 doTransactions();

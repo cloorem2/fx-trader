@@ -81,8 +81,7 @@ async function doMain() {
     fs.writeFileSync('aadmidp',aadmidp.toExponential(9) + '\n');
 
     var tstr = '';
-    for (var i in nv)
-      tstr += dmid_brain[i].toExponential(9) + '\n';
+    for (var i in nv) tstr += dmid_brain[i].toExponential(9) + '\n';
     fs.writeFileSync('dmid_brain',tstr);
     fs.writeFileSync('aadmid_err',aadmid_err.toExponential(9) + '\n');
     tstr = '';

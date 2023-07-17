@@ -45,7 +45,7 @@ var max_nav = 1;
 // var long_nav = 0.5,short_nav = 0.5;
 var max_dd = 0;
 var opt_levx = Number(fs.readFileSync('opt_levx','utf8'));
-// var opt_levx = 0.01;
+// opt_levx = 0.7;
 var levx = opt_levx;
 
   var pdmidp = 0;
@@ -84,8 +84,9 @@ try {
 } catch {}
 
 var apdmidp = Number(fs.readFileSync('apdmidp','utf8'));
-// var apdmidp = 0;
+var aapdmidp = Number(fs.readFileSync('aapdmidp','utf8'));
 var apvarp = Number(fs.readFileSync('apvarp','utf8'));
+var aapvarp = Number(fs.readFileSync('aapvarp','utf8'));
 
       // a = 4 * Math.log(aadmid_err);
       // b = 4 * Math.log(apvar);
@@ -130,7 +131,9 @@ async function readFiles() {
   for (var i in pvar_brain) pvar_brain[i] = Number(pvar_brain_lines[i]);
 
   fs.writeFileSync('apdmidp',apdmidp.toExponential(9) + '\n');
+  fs.writeFileSync('aapdmidp',aapdmidp.toExponential(9) + '\n');
   fs.writeFileSync('apvarp',apvarp.toExponential(9) + '\n');
+  fs.writeFileSync('aapvarp',aapvarp.toExponential(9) + '\n');
   fs.writeFileSync('reala',a.toExponential(9) + '\n');
   fs.writeFileSync('realb',b.toExponential(9) + '\n');
 }
@@ -167,8 +170,8 @@ async function doMain() {
       if (smode == 0) {
         if (nav > 0) {
           optx = Math.log(nav) / nmonths;
-          opt_optx *= 0.99999;
-          opt_optx += optx / 100000;
+          opt_optx *= 0.9999;
+          opt_optx += optx / 10000;
           fs.writeFileSync('opt_optx',opt_optx.toExponential(9) + '\n');
         } else opt_optx = -1;
         // fs.renameSync('tprice0','tprice1');
@@ -212,7 +215,7 @@ async function doOptVector() {
 }
 
 async function doFreshVector() {
-  const d = 10 ** (tcount + 3);
+  const d = 10 ** (tcount + 2);
   /*
   var vs = 0;
   for (var i in v) {
@@ -231,12 +234,12 @@ async function doFreshVector() {
   */
   var x = (2 * Math.random() - 1) / 2;
   levx = opt_levx * (1 + x);
-  if (levx > 0.9) levx = 0.9;
+  if (levx > 0.8) levx = 0.8;
   // levx = Math.random() / d;
   // levx = opt_levx;
   sellm = opt_sellm + (2 * Math.random() - 1) / d;
-  sellf = opt_sellf + (2 * Math.random() - 1) / 1;
-  sellf2 = opt_sellf2 + (2 * Math.random() - 1) / 10;
+  sellf = opt_sellf * (4 * Math.random() - 1);
+  sellf2 = opt_sellf2 * (4 * Math.random() - 1);
   // buym = opt_buym + (2 * Math.random() - 1) / d;
 
   tcount++;
@@ -244,7 +247,7 @@ async function doFreshVector() {
 }
 
 async function doBigBalance() {
-  if (optx < 1) return;
+  if (optx < 0) return;
   aoptx *= 0.9999;
   aoptx += optx / 10000;
   if (optx < aoptx) return;
@@ -278,8 +281,8 @@ async function doBigBalance() {
   opt_sellf *= 0.9999;
   opt_sellf += sellf / 10000;
   fs.writeFileSync('sellf',opt_sellf.toExponential(9) + '\n');
-  opt_sellf2 *= 0.99999;
-  opt_sellf2 += sellf2 / 100000;
+  opt_sellf2 *= 0.9999;
+  opt_sellf2 += sellf2 / 10000;
   fs.writeFileSync('sellf2',opt_sellf2.toExponential(9) + '\n');
 
   /*
@@ -344,26 +347,22 @@ async function doPrintLine() {
 async function doLine(line) {
   var y = Math.random();
   var x = Math.sqrt(Math.log(y) / a);
+  a *= (x / aadmid_err - 1) / 100_000 + 1;
   if (Math.random() > 0.5) x *= -1;
-  apdmidp *= 0.9999;
-  apdmidp += Math.abs(x) / 10000;
-  if (apdmidp > aadmid_err) a *= 1.0001;
-  else a *= 0.9999;
   pdmidp += x;
-  // pdmidp = pdmidp + aadmid_err * 2 * (2 * Math.random() - 1);
+  aapdmidp *= 0.99999;
+  aapdmidp += Math.abs(pdmidp) / 100000;
+  pdmidp *= aadmidp / aapdmidp;
 
   y = Math.random();
   x = Math.sqrt(Math.log(y) / b);
+  b *= (x / aapvar_err - 1) / 100_000 + 1;
   if (Math.random() > 0.5) x *= -1;
-  apvarp *= 0.9999;
-  apvarp += Math.abs(x) / 10000;
-  if (apvarp > aapvar_err) b *= 1.0001;
-  else b *= 0.9999;
   pvarp += x;
   if (pvarp < 0) pvarp = 0;
-  // pvarp = 2 * Math.random() * pvarp;
-  // console.log(a,b);
-  // console.log(pdmidp,pvarp);
+  aapvarp *= 0.99999;
+  aapvarp += pvarp / 100000;
+  pvarp *= apvar / aapvarp;
 
   const midp = omidp * pdmidp + omidp;
   // console.log(midp,tmidp);
@@ -372,7 +371,7 @@ async function doLine(line) {
   // fs.appendFileSync('tprice',midp.toFixed(5) + ' ' + nav.toFixed(5) + '\n');
   // console.log(highp,sellp,buyp,lowp,pvarp);
   if (orders_placed == 1) {
-    duration++;
+    // duration++;
     if (highp >= sellp)
       if (lowp <= sellp + aspread) await doSell();
     if (lowp <= buyp)
@@ -393,9 +392,16 @@ async function doLine(line) {
 
   pdmidp = 0;
   for (var i in nv) pdmidp += dmid_brain[i] * nv[i];
+  apdmidp *= 0.99999;
+  apdmidp += Math.abs(pdmidp) / 100000;
+  pdmidp *= aadmidp / apdmidp;
+
   pvarp = 0;
   for (var i in nv) pvarp += pvar_brain[i] * nv[i];
   if (pvarp < 0) pvarp = 0;
+  apvarp *= 0.99999;
+  apvarp += pvarp / 100000;
+  pvarp *= apvar / apvarp;
 
   tmidp = omidp * pdmidp + omidp;
   sellp = tmidp
@@ -453,9 +459,9 @@ async function doBuy() {
     if (pos + buy_size > 0) {
       nav -= pos * (posp - buyp);
       posp = buyp;
-      aduration *= 0.999;
-      aduration += duration / 1000;
-      duration = 0;
+      // aduration *= 0.999;
+      // aduration += duration / 1000;
+      // duration = 0;
     } else {
       nav += buy_size * (posp - buyp);
     }
@@ -475,9 +481,9 @@ async function doSell() {
     if (pos - sell_size < 0) {
       nav += pos * (sellp - posp);
       posp = sellp;
-      aduration *= 0.99;
-      aduration += duration / 100;
-      duration = 0;
+      // aduration *= 0.99;
+      // aduration += duration / 100;
+      // duration = 0;
     } else {
       nav += sell_size * (sellp - posp);
     }
