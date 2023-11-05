@@ -64,7 +64,7 @@ var maxa_mid = Number(fs.readFileSync('maxa_mid','utf8'));
 var aspread = Number(fs.readFileSync('aspread','utf8'));
 var chunk_save = '';
 
-var sdelay = Number(fs.readFileSync('sdelay','utf8'));
+var sdelay = 2; // Number(fs.readFileSync('sdelay','utf8'));
 var oh0 = Number(fs.readFileSync('oh0','utf8'));
 var om0 = Number(fs.readFileSync('om0','utf8'));
 var os0 = Number(fs.readFileSync('os0','utf8'));
@@ -207,9 +207,6 @@ function doSummary() {
   });
   req.write('data\n');
   req.end();
-
-  doShowOrders();
-  doTrimOrders();
 }
 
 function doTransactions() {
@@ -309,11 +306,11 @@ async function doTransData(data) {
       console.log('filled at ' + data.price + ' ' + data.units + ' pos ' + pos);
     // console.log('new pos ' + pos);
     fs.writeFileSync('pos',pos.toFixed() + '\n');
-    fs.writeFileSync('last_order_fill',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_order_fill',JSON.stringify(data) + '\n');
     // console.log('order fill data');
     // console.log(data);
-    // fs.appendFileSync('last_trans','------------\n');
-    // fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans','------fill--\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'HEARTBEAT') return;
@@ -340,7 +337,8 @@ async function doTransData(data) {
       }
     }
     fs.writeFileSync('last_touch_order',JSON.stringify(data) + '\n');
-    // fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans','------touch-\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'LIMIT_ORDER') {
@@ -368,7 +366,8 @@ async function doTransData(data) {
       }
     }
     fs.writeFileSync('last_limit_order',JSON.stringify(data) + '\n');
-    // fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans','------limit-\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'TRANSFER_FUNDS') {
@@ -393,6 +392,8 @@ async function doTransData(data) {
     } else {
       console.log('here is the other cancel');
       console.log(data);
+      doSummary();
+      doShowOrders();
       /*
       if (Number(data.orderID) == buy_order_id) {
         console.log('should order the buy');
@@ -405,13 +406,15 @@ async function doTransData(data) {
       */
     }
     fs.writeFileSync('last_order_cancel',JSON.stringify(data) + '\n');
-    // fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans','------cancel\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'ORDER_CANCEL_REJECT') {
     // console.log('got trans cancel reject');
     // fs.writeFileSync('last_order_cancel_reject',JSON.stringify(data) + '\n');
-    // fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
+    fs.appendFileSync('last_trans','------reject\n');
+    fs.appendFileSync('last_trans',JSON.stringify(data) + '\n');
     return;
   }
   if (data.type == 'ORDER_CLIENT_EXTENSIONS_MODIFY') {
@@ -490,7 +493,6 @@ async function doChunk(data) {
   const nh0 = Number(h0);
   const nm0 = Number(m0);
   const ns0 = Number(s0);
-
   const th0 = nh0 < oh0 ? nh0 + 24 - oh0 : nh0 - oh0;
   const tdelay = th0 * 60 * 60 + (nm0 - om0) * 60 + (ns0 - os0);
   if (tdelay >= sdelay) await doMadeDelay(nh0,nm0,ns0);
@@ -521,6 +523,19 @@ async function doChunk(data) {
   fs.writeFileSync('maxb_long',maxb_long.toFixed(6) + '\n');
   fs.writeFileSync('maxa_mid',maxa_mid.toFixed(6) + '\n');
   fs.writeFileSync('maxb_mid',maxb_mid.toFixed(6) + '\n');
+
+  var time_str = '';
+  if (nh0 < 10) time_str += '0';
+  time_str += nh0.toFixed() + ':';
+  if (nm0 < 10) time_str += '0';
+  time_str += nm0.toFixed() + ':';
+  if (ns0 < 9.5) time_str += '0';
+  time_str += ns0.toFixed();
+  var new_pstr = time_str
+    + ' ' + current_bid.toFixed(5)
+    + ' ' + current_ask.toFixed(5)
+    + '\n';
+  fs.appendFileSync('ticks',new_pstr);
 }
 
 async function doMadeMidDelay( nh0,nm0,ns0 ) {
@@ -616,14 +631,10 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
         }
     } else miss_counts[1]++;
   }
-  await doTrade(midp,pvar);
+  // await doTrade(midp,pvar);
+  await doNewTrade(midp,pvar);
 
   // console.log('here');
-  await doTestLevels(midp);
-  var tstr = '';
-  for (var i in v) tstr += latest_v[i].toExponential(9) + '\n';
-  fs.writeFileSync('latest_v',tstr);
-
   const pstr = midp.toFixed(6)
     + ' ' + pvar.toExponential(6)
     + ' ' + spread.toExponential(6)
@@ -648,9 +659,11 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
   else new_pstr += ' 0\n';
   fs.appendFileSync('new_plog',new_pstr);
 
+  /*
   if (apvar < 2 * aspread) sdelay *= 1.0001;
   else sdelay *= 0.9999;
   fs.writeFileSync('sdelay',sdelay.toExponential(9) + '\n');
+  */
 
   if (onav > 0) {
     const dnav = (nav - onav) / onav;
@@ -661,19 +674,20 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
   onav = nav;
 
   if (linec == 0) {
-    console.log('    pvar    delay    bids    asks     nav     adnav    utc');
+    console.log('    pvar    bids    asks     nav     adnav    profitp   finalp   utc');
   }
   linec++; if (linec == 19) linec = 0;
   const closep = (current_ask + current_bid) / 2;
   var tstr =
     pvar.toExponential(3)
-    + ' ' + sdelay.toExponential(3)
+    // + ' ' + sdelay.toExponential(3)
     + ' ' + maxb.toFixed(5)
     + ' ' + maxa.toFixed(5)
     // + ' ' + closep.toFixed(5)
     + ' ' + nav.toExponential(4)
-    + ' ' + adnav.toExponential(2)
+    + ' ' + adnav.toExponential(3)
     + ' ' + profitp.toExponential(2)
+    + ' ' + final_profit.toExponential(2)
     ;
   // if (pos > 0) tstr += ' ';
   // tstr += ' ' + pos.toFixed(0) + ' ';
@@ -685,35 +699,97 @@ async function doMadeDelay( nh0,nm0,ns0 ) {
   fs.appendFileSync('log',tstr + '\n');
   if (pvar >= 0) tstr = ' ' + tstr;
   console.log(tstr);
+  // await doTestLevels(midp);
+  var tstr = '';
+  for (var i in v) tstr += latest_v[i].toExponential(9) + '\n';
+  fs.writeFileSync('latest_v',tstr);
+
   oh0 = nh0; fs.writeFileSync('oh0',oh0.toFixed() + '\n');
   om0 = nm0; fs.writeFileSync('om0',om0.toFixed() + '\n');
   os0 = ns0; fs.writeFileSync('os0',os0.toFixed() + '\n');
   maxa = current_ask;
   maxb = current_bid;
 
-  /*
-  await doFirstBrain();
-  tstr = '';
-  for (var i in fb_dmid_brain) tstr += fb_dmid_brain[i].toExponential(9) + '\n';
-  fs.writeFileSync('fb_dmid_brain',tstr);
-
-  tstr = '';
-  for (var i in fb_pvar_brain) tstr += fb_pvar_brain[i].toExponential(9) + '\n';
-  fs.writeFileSync('fb_pvar_brain',tstr);
-
-  tstr = '';
-  for (var i in pd_brain) tstr += pd_brain[i].toExponential(9) + '\n';
-  fs.writeFileSync('pd_brain',tstr);
-  fs.appendFileSync('pd_log',my_apvar.toExponential(3)
-    + ' ' + (aapvar_err / my_apvar).toExponential(3)
-    + ' ' + my_aadmidp.toExponential(3)
-    + ' ' + (aadmid_err / my_aadmidp).toExponential(3)
-    + '\n'
-  )
-  */
-
   await readFiles();
   // ordersTimeout = setTimeout(() => { doTrimOrders(); }, sdelay / 2 * 1000);
+}
+
+async function doNewTrade(midp,pvar) {
+  const dmidp = (midp - omidp) / omidp;
+  omidp = midp;
+
+  apvar = Number(fs.readFileSync('test/apvar','utf8'));
+  aadmidp = Number(fs.readFileSync('test/aadmidp','utf8'));
+  latest_v[5] = latest_v[4];
+  latest_v[4] = latest_v[3];
+  latest_v[3] = pvar / apvar;
+  latest_v[2] = 1;
+  latest_v[1] = latest_v[0];
+  latest_v[0] = dmidp / aadmidp;
+  var vs = 0;
+  for (var i in latest_v) vs += latest_v[i] * latest_v[i];
+  vs = Math.sqrt(vs);
+  for (var i in latest_v) latest_nv[i] = latest_v[i] / vs;
+
+  final_profit = Number(fs.readFileSync('test/final_profit','utf8'));
+  try {
+    const profit_brain_data = fs.readFileSync('test/profit_brain','utf8');
+    const profit_brain_lines = profit_brain_data.split('\n');
+    for (var i in v) profit_brain[i] = Number(profit_brain_lines[i]);
+  } catch {}
+  profitp = 0;
+  for (var i in v) profitp += profit_brain[i] * latest_nv[i];
+  // if (final_profit <= 0) return;
+
+  try {
+    const dmid_t_brain_data = fs.readFileSync('test/dmid_t_brain','utf8');
+    const dmid_t_brain_lines = dmid_t_brain_data.split('\n');
+    for (var i in v) dmid_t_brain[i] = Number(dmid_t_brain_lines[i]);
+  } catch {}
+
+  try {
+    const pvar_t_brain_data = fs.readFileSync('test/pvar_t_brain','utf8');
+    const pvar_t_brain_lines = pvar_t_brain_data.split('\n');
+    for (var i in v) pvar_t_brain[i] = Number(pvar_t_brain_lines[i]);
+  } catch {}
+
+  var dmidp_t = 0;
+  for (var i in v) dmidp_t += dmid_t_brain[i] * latest_nv[i];
+  var pvar_t = 0;
+  for (var i in v) pvar_t += pvar_t_brain[i] * latest_nv[i];
+  const midp_t = midp + midp * dmidp_t;
+  sellp = midp_t + midp_t * pvar_t / 2;
+  buyp = midp_t - midp_t * pvar_t / 2;
+
+  buy_size = Number((levx * 50 * nav / midp).toFixed());
+  sell_size = buy_size;
+  if (pos > 0) { buy_size = 0; sell_size = pos; }
+  else if (pos < 0) { sell_size = 0; buy_size = -pos; }
+  else if (profitp <= 0) {
+    if (sell_order_id > 0) await doCancelAll(sell_order_id);
+    if (buy_order_id > 0) await doCancelAll(buy_order_id);
+    return;
+  }
+  if (Math.abs(sellp - current_bid) < Math.abs(buyp - current_ask)) {
+    if (sell_size > 0) {
+      if (sell_order_id == 0) await doOrder(sellp,-sell_size);
+      else await doUpdateOrder(sellp,-sell_size,sell_order_id,sell_order_touch);
+    } else if (sell_order_id > 0) await doCancelAll(sell_order_id);
+    if (buy_size > 0) {
+      if (buy_order_id == 0) await doOrder(buyp,buy_size);
+      else await doUpdateOrder(buyp,buy_size,buy_order_id,buy_order_touch);
+    } else if (buy_order_id > 0) await doCancelAll(buy_order_id);
+  } else {
+    if (buy_size > 0) {
+      if (buy_order_id == 0) await doOrder(buyp,buy_size);
+      else await doUpdateOrder(buyp,buy_size,buy_order_id,buy_order_touch);
+    } else if (buy_order_id > 0) await doCancelAll(buy_order_id);
+    if (sell_size > 0) {
+      if (sell_order_id == 0) await doOrder(sellp,-sell_size);
+      else await doUpdateOrder(sellp,-sell_size,sell_order_id,sell_order_touch);
+    } else if (sell_order_id > 0) await doCancelAll(sell_order_id);
+  }
+  fs.writeFileSync('omidp',omidp.toExponential(9) + '\n');
 }
 
 async function doTrade(midp,pvar) {
@@ -731,30 +807,8 @@ async function doTrade(midp,pvar) {
   vs = Math.sqrt(vs);
   for (var i in latest_v) latest_nv[i] = latest_v[i] / vs;
 
-  /*
-  pdmidp = 0;
-  for (var i in latest_nv) pdmidp += dmid_brain[i] * latest_nv[i];
-  pdmidp *= aadmidp / apdmidp;
-
-  pvarp = 0;
-  for (var i in latest_nv) pvarp += pvar_brain[i] * latest_nv[i];
-  if (pvarp < 0) pvarp = 0;
-  pvarp *= apvar / apvarp;
-  */
-
   await setSellp();
   await setBuyp();
-  /*
-  const tmidp = midp * pdmidp + midp;
-  sellp = Number((tmidp
-    + midp * pdmidp * sellf2
-    + tmidp * pvarp * sellf
-    + sellm).toFixed(5));
-  buyp = Number((tmidp
-    - midp * pdmidp * sellf2
-    - tmidp * pvarp * sellf
-    - sellm).toFixed(5));
-    */
 
   buy_size = Number((levx * 50 * nav / midp).toFixed());
   sell_size = buy_size;
@@ -768,32 +822,6 @@ async function doTrade(midp,pvar) {
     if (buy_order_id == 0) await doOrder(buyp,buy_size);
     else await doUpdateOrder(buyp,buy_size,buy_order_id,buy_order_touch);
   } else if (buy_order_id > 0) await doCancelAll(buy_order_id);
-
-  /*
-  buy_size = levx * 50 * nav / midp - pos;
-  if (buy_size < 0) buy_size = 0;
-  sell_size = levx * 50 * nav / midp + pos;
-  if (sell_size < 0) sell_size = 0;
-  buy_size = Number(buy_size.toFixed());
-  sell_size = Number(sell_size.toFixed());
-  if (sell_size > buy_size) {
-    if (sell_size > 0) {
-      if (order_id == 0) await doOrder(sellp,-sell_size);
-      else await doUpdateOrder(sellp,-sell_size);
-    } else if (order_id > 0)
-      console.log('should cancel here ' + order_id);
-    order_price = sellp;
-    order_size = -sell_size;
-  } else {
-    if (buy_size > 0) {
-      if (order_id == 0) await doOrder(buyp,buy_size);
-      else await doUpdateOrder(buyp,buy_size);
-    } else if (order_id > 0)
-      console.log('should cancel here ' + order_id);
-    order_price = buyp;
-    order_size = buy_size;
-  }
-  */
 
   fs.writeFileSync('omidp',omidp.toExponential(9) + '\n');
 }
@@ -892,7 +920,7 @@ async function doUpdateOrder(price,size,order_id,order_touch) {
     },
   };
 
-  trade_str += ' ' + size + ' ' + price;
+  trade_str += ' ' + size.toFixed() + ' ' + price.toFixed(5);
   if (torder_touch == 1) trade_str += ' <--';
   var cancel_first = 0;
   var clean_chunk = '';
@@ -973,7 +1001,7 @@ async function doOrder(price,size) {
       body.order.type = "MARKET_IF_TOUCHED";
     }
   }
-  trade_str += ' ' + size + ' ' + price;
+  trade_str += ' ' + size.toFixed() + ' ' + price.toFixed(5);
   if (torder_touch == 1) trade_str += ' <--';
   // console.log(order_options);
   var clean_chunk = '';
@@ -1085,6 +1113,7 @@ function doShowOrders() {
         for (var i of data.orders) {
           order_count++;
           // console.log(i);
+          // doCancelAll(i.id);
         }
         console.log('found ' + order_count + ' orders');
       } catch (e) { console.log(e); }
@@ -1097,195 +1126,91 @@ function doShowOrders() {
 }
 
 
-var vdot = 0;
-var brain_omidp = 0;
-const plog_v = [ 1,1,1,1,1,1 ];
-const plog_nv = [ 0,0,0,0,0,0 ];
-async function doFirstBrain() {
-  while (sb_count < 1000) {
-    vdot = 0;
-    brain_omidp = 0;
-    for (var i in plog_v) plog_v[i] = 1;
-    for (var i in plog_v) plog_nv[i] = 0;
-    const plog_data = fs.readFileSync('plog','utf8');
-    const plog_lines = plog_data.split('\n');
-    for (var i in plog_lines) await doFirstBrainLine(plog_lines[i]);
-  }
-}
+var profitp = 0;
+var final_profit = 0;
+// var test_sellp = 0;
+// var test_buyp = 0;
+const profit_brain = [ 0,0,0,0,0,0 ];
+const dmid_t_brain = [ 0,0,0,0,0,0 ];
+const dmid_c_brain = [ 0,0,0,0,0,0 ];
+const pvar_t_brain = [ 0,0,0,0,0,0 ];
+async function doTestLevels(midp)  {
+  if (pos == 0) {
+    try {
+      const profit_brain_data = fs.readFileSync('test/profit_brain','utf8');
+      const profit_brain_lines = profit_brain_data.split('\n');
+      for (var i in v) profit_brain[i] = Number(profit_brain_lines[i]);
+    } catch {}
+    profitp = 0;
+    for (var i in v) profitp += profit_brain[i] * latest_nv[i];
+    if (profitp <= 0) return;
 
-var aadmid_err = 0;
-var aapvar_err = 0;
-async function doFirstBrainLine(line) {
-  const lst = line.split(' ');
-  if (lst.length < 3) return;
-  const spread = Number(lst[2]);
-  const pvar = Number(lst[1]);
-  const midp = Number(lst[0]);
-  if (brain_omidp == 0) brain_omidp = midp;
-  const dmidp = (midp - brain_omidp) / brain_omidp;
-  brain_omidp = midp;
+    try {
+      const dmid_t_brain_data = fs.readFileSync('test/dmid_t_brain','utf8');
+      const dmid_t_brain_lines = dmid_t_brain_data.split('\n');
+      for (var i in v) dmid_t_brain[i] = Number(dmid_t_brain_lines[i]);
+    } catch {}
 
-  my_aadmidp *= 1 - vdot / 1000;
-  my_aadmidp += dmidp * vdot / 1000;
-  my_apvar *= 1 - vdot / 1000;
-  my_apvar += pvar * vdot / 1000;
+    try {
+      const pvar_t_brain_data = fs.readFileSync('test/pvar_t_brain','utf8');
+      const pvar_t_brain_lines = pvar_t_brain_data.split('\n');
+      for (var i in v) pvar_t_brain[i] = Number(pvar_t_brain_lines[i]);
+    } catch {}
 
-  var pdmidp = 0;
-  for (var i in plog_nv) pdmidp += fb_dmid_brain[i] * plog_nv[i];
-  const dmid_err = dmidp - pdmidp;
-  aadmid_err *= 1 - vdot / 1000;
-  aadmid_err += dmid_err * vdot / 1000;
-  for (var i in plog_nv) fb_dmid_brain[i] += vdot * dmid_err * plog_nv[i] / 1e7;
+    var dmidp_t = 0;
+    for (var i in v) dmidp_t += dmid_t_brain[i] * latest_nv[i];
+    var pvar_t = 0;
+    for (var i in v) pvar_t += pvar_t_brain[i] * latest_nv[i];
+    const midp_t = midp + midp * dmidp_t;
+    sellp = midp_t + midp_t * pvar_t / 2;
+    buyp = midp_t - midp_t * pvar_t / 2;
 
-  var pvarp = 0;
-  for (var i in plog_nv) pvarp += fb_pvar_brain[i] * plog_nv[i];
-  const pvar_err = pvar - pvarp;
-  aapvar_err *= 1 - vdot / 1000;
-  aapvar_err += pvar_err * vdot / 1000;
-  for (var i in plog_nv) fb_pvar_brain[i] += vdot * pvar_err * plog_nv[i] / 1e7;
+    /*
+    console.log('test levels trade at ' + sellp.toFixed(5)
+      + ' ' + buyp.toFixed(5)
+      + ' p ' + profitp.toExponential(5))
+      ;
+      */
+    if (sellp !== sellp) {
+      console.log('stupid nan');
+      console.log(dmid_t_brain);
+      console.log(pvar_t_brain);
+    }
+  } else {
+    try {
+      const dmid_c_brain_data = fs.readFileSync('test/dmid_c_brain','utf8');
+      const dmid_c_brain_lines = dmid_c_brain_data.split('\n');
+      for (var i in v) dmid_c_brain[i] = Number(dmid_c_brain_lines[i]);
+    } catch {}
+    if (pos > 0) {
+      var dmidp_t = 0;
+      for (var i in v) dmidp_t += dmid_t_brain[i] * latest_nv[i];
+      var pvar_t = 0;
+      for (var i in v) pvar_t += pvar_t_brain[i] * latest_nv[i];
+      const midp_t = midp + midp * dmidp_t;
+      sellp = midp_t + midp_t * pvar_t / 2;
+      buyp = 0;
 
-  plog_v[5] = plog_v[4];
-  plog_v[4] = plog_v[3];
-  plog_v[3] = pvar / my_apvar;
-  plog_v[2] = 1;
-  plog_v[1] = plog_v[0];
-  plog_v[0] = dmidp / my_aadmidp;
-  var vs = 0;
-  for (var i in plog_v) vs += plog_v[i] * plog_v[i];
-  vs = Math.sqrt(vs);
-  for (var i in plog_v) plog_nv[i] = plog_v[i] / vs;
+      // var dmidp_t = 0;
+      // for (var i in v) dmidp_t += dmid_c_brain[i] * latest_nv[i];
+      // sellp = midp + midp * dmidp_t;
+      // buyp = 0;
+    } else {
+      var dmidp_t = 0;
+      for (var i in v) dmidp_t += dmid_t_brain[i] * latest_nv[i];
+      var pvar_t = 0;
+      for (var i in v) pvar_t += pvar_t_brain[i] * latest_nv[i];
+      const midp_t = midp + midp * dmidp_t;
+      sellp = 0;
+      buyp = midp_t - midp_t * pvar_t / 2;
 
-  var vdot = 0;
-  for (var i in plog_v) vdot += plog_nv[i] * latest_nv[i];
-  await doSecondBrain();
-}
-
-var type_count = 0;
-var type_count_v = [];
-var sb_count = 0;
-const pricing_v = [ 1,1,1,1,1,1 ];
-const pricing_nv = [ 0,0,0,0,0,0 ];
-const pd_mod = [ 0,0,0,0,0,0 ];
-const pd_brain = [ 0,0,0,0,0,0 ];
-const tpd_brain = [ 0,0,0,0,0,0 ];
-const lean_brain = [ 0,0,0,0,0,0 ];
-const tlean_brain = [ 0,0,0,0,0,0 ];
-var pricing_a = Number(fs.readFileSync('reala','utf8'));
-var pricing_b = Number(fs.readFileSync('realb','utf8'));
-async function doSecondBrain() {
-  sb_count++;
-  var pdmidp = 0;
-  for (var i in latest_nv) pdmidp += fb_dmid_brain[i] * latest_nv[i];
-  var pvarp = 0;
-  for (var i in latest_nv) pvarp += fb_pvar_brain[i] * latest_nv[i];
-  pricing_v[5] = latest_v[4];
-  pricing_v[4] = latest_v[3];
-  pricing_v[2] = 1;
-  pricing_v[1] = latest_v[0];
-
-  type_count++;
-  if (type_count == 5) type_count = 0;
-  const d = 10 ** (type_count + 3);
-  for (var i in pd_brain) pd_mod[i] = (2 * Math.random() - 1) / d;
-  for (var i in pd_brain) tpd_brain[i] = pd_brain[i] + pd_mod[i];
-
-  var winners = 0;
-
-  for (var linei = 0; linei < 1000; linei++) {
-    var x1 = Math.sqrt(Math.log(Math.random()) / pricing_a);
-    pricing_a *= (x1 / aadmid_err - 1) / 100_000 + 1;
-    if (Math.random() > 0.5) x1 *= -1;
-    const pdmidp2 = pdmidp + x1;
-    const new_midp = omidp + omidp * pdmidp2;
-
-    var x2 = Math.sqrt(Math.log(Math.random()) / pricing_b);
-    pricing_b *= (x2 / aapvar_err - 1) / 100_000 + 1;
-    if (Math.random() > 0.5) x2 *= -1;
-    const pvarp2 = pvarp + x2 > 0 ? pvarp + x2 : 0;
-
-    pricing_v[3] = pvarp2 / my_apvar;
-    pricing_v[0] = pdmidp2 / my_aadmidp;
-    var vs = 0;
-    for (var i in pricing_v) vs += pricing_v[i] * pricing_v[i];
-    vs = Math.sqrt(vs);
-    for (var i in pricing_v) pricing_nv[i] = pricing_v[i] / vs;
-
-    var pdmidp3 = 0;
-    for (var i in pricing_nv) pdmidp3 += fb_dmid_brain[i] * pricing_nv[i];
-    const new_midp2 = new_midp + new_midp * pdmidp2;
-    var pd = 0;
-    for (var i in pricing_nv) pd += tpd_brain[i] * pricing_nv[i];
-    if (pd < 0) continue;
-    const pricing_sellp = Number((new_midp2 + new_midp2 * pd).toFixed(5));
-    const pricing_buyp = Number((new_midp2 - new_midp2 * pd).toFixed(5));
-
-    var pvarp3 = 0;
-    for (var i in pricing_nv) pvarp3 += fb_pvar_brain[i] * pricing_nv[i];
-
-    var x3 = Math.sqrt(Math.log(Math.random()) / pricing_a);
-    if (Math.random() > 0.5) x3 *= -1;
-    const pdmidp4 = pdmidp3 + x3;
-    const new_midp3 = new_midp + new_midp * pdmidp4;
-
-    var x4 = Math.sqrt(Math.log(Math.random()) / pricing_b);
-    if (Math.random() > 0.5) x4 *= -1;
-    const pvarp4 = pvarp3 + x4 > 0 ? pvarp3 + x4 : 0;
-
-    const highp = new_midp3 + new_midp3 * pvarp4;
-    const lowp = new_midp3 - new_midp3 * pvarp4;
-    if (highp >= pricing_sellp) {
-      if (lowp <= pricing_buyp) {
-        winners++;
-      } else if (lowp <= pricing_sellp) {
-        winners--;
-      }
-    } else if (highp >= pricing_buyp) {
-      if (lowp <= pricing_buyp) {
-        winners--;
-      }
+      // var dmidp_t = 0;
+      // for (var i in v) dmidp_t += dmid_c_brain[i] * latest_nv[i];
+      // buyp = midp + midp * dmidp_t;
+      // sellp = 0;
     }
   }
-  if (winners > 0) for (var i in pd_brain)
-    pd_brain[i] += pd_mod[i] / 100;
-}
 
-var profitp = 0;
-async function doTestLevels(midp)  {
-  const profit_brain = [ 0,0,0,0,0,0 ];
-  const profit_brain_data = fs.readFileSync('test/profit_brain','utf8');
-  const profit_brain_lines = profit_brain_data.split('\n');
-  for (var i in v) profit_brain[i] = Number(profit_brain_lines[i]);
-  profitp = 0;
-  for (var i in v) profitp += profit_brain[i] * latest_nv[i];
-  if (profitp <= 0) return;
-
-  const test_brain = [ 0,0,0,0,0,0 ];
-  const test_brain_data = fs.readFileSync('test/dmid_brain','utf8');
-  const test_brain_lines = test_brain_data.split('\n');
-  for (var i in v) test_brain[i] = Number(test_brain_lines[i]);
-  const pd_brain_data = fs.readFileSync('test/pd_brain','utf8');
-  const pd_brain_lines = pd_brain_data.split('\n');
-  for (var i in v) pd_brain[i] = Number(pd_brain_lines[i]);
-  const lean_brain_data = fs.readFileSync('test/lean_brain','utf8');
-  const lean_brain_lines = lean_brain_data.split('\n');
-  for (var i in v) lean_brain[i] = Number(lean_brain_lines[i]);
-
-  var pd = 0;
-  for (var i in v) pd += pd_brain[i] * latest_nv[i];
-
-  var lean = 0;
-  for (var i in v) lean += lean_brain[i] * latest_nv[i];
-  lean = (lean + 1) / 2;
-
-  var my_pdmidp = 0;
-  for (var i in v) my_pdmidp += test_brain[i] * latest_nv[i];
-  const new_midp = midp + midp * my_pdmidp;
-  const sellp = new_midp + new_midp * pd * lean;
-  const buyp = new_midp - new_midp * pd * (1 - lean);
-  console.log('test levels trade at ' + sellp.toFixed(5)
-    + ' ' + buyp.toFixed(5)
-    + ' p ' + profitp.toExponential(5))
-    ;
 }
 
 async function readFiles() {
@@ -1297,8 +1222,6 @@ async function readFiles() {
   levx = Number(fs.readFileSync('opt_levx','utf8'));
   // levx /= 5;
 
-  // aadmid_err = Number(fs.readFileSync('aadmid_err','utf8'));
-  // aapvar_err = Number(fs.readFileSync('aapvar_err','utf8'));
   aspread = Number(fs.readFileSync('aspread','utf8'));
 
   apdmidp = Number(fs.readFileSync('apdmidp','utf8'));
@@ -1327,6 +1250,8 @@ async function readFiles() {
 
 readFiles();
 doSummary();
+doShowOrders();
+doTrimOrders();
 var mainTimeout = setTimeout(() => { doMain(); }, 9000);
 
 doTransactions();

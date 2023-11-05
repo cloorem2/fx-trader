@@ -1,0 +1,1 @@
+{"type":"PRICE","time":"2023-11-03T20:58:00.084741125Z","bids":[{"price":"1.07269","liquidity":10000000}],"asks":[{"price":"1.07303","liquidity":10000000}],"closeoutBid":"1.07269","closeoutAsk":"1.07303","status":"non-tradeable","tradeable":false,"instrument":"EUR_USD"}

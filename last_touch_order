@@ -1,0 +1,1 @@
+{"id":"60395","accountID":"001-001-9530466-002","userID":9530466,"batchID":"60395","requestID":"133193630322955331","time":"2023-08-03T12:16:54.588716921Z","type":"MARKET_IF_TOUCHED_ORDER","instrument":"EUR_USD","units":"176","price":"1.09334","timeInForce":"GTC","triggerCondition":"DEFAULT","partialFill":"DEFAULT","positionFill":"DEFAULT","reason":"CLIENT_ORDER"}

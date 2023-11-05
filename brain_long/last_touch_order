@@ -1,0 +1,1 @@
+{"id":"6631","accountID":"001-001-9530466-002","userID":9530466,"batchID":"6631","requestID":"133188114252110810","time":"2023-07-19T06:58:01.617540064Z","type":"MARKET_IF_TOUCHED_ORDER","instrument":"EUR_USD","units":"1226","price":"1.12157","timeInForce":"GTC","triggerCondition":"DEFAULT","partialFill":"DEFAULT","positionFill":"DEFAULT","reason":"CLIENT_ORDER"}
