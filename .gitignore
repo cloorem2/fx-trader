@@ -1,5 +1,4 @@
-data
-node_modules
-ticks
-ticks-2018
-ticks-2017
+data/
+node_modules/
+ticks*
+
