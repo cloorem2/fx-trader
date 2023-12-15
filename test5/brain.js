@@ -4,8 +4,9 @@ const https = require('https');
 
 var num_facets = Number(fs.readFileSync('num_facets','utf8'));
 var tnum_facets = num_facets;
-const max_num_facets = 32;
-const v_len = 6; // 19;
+var num_facets_neg = num_facets;
+const max_num_facets = 1000;
+const v_len = 7; // 19;
 
 var omidp = 0;
 const spw = 60 * 60 * 24 * 7;
@@ -21,42 +22,52 @@ for (var i = 0; i < num_facets; i++) {
     const id_nv_data = fs.readFileSync('id_nv/' + i,'utf8');
     const id_nv_lines = id_nv_data.split('\n');
     for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = Number(id_nv_lines[ii]);
-  } catch { for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = 0; }
-  for (var ii = 0; ii < v_len; ii++)
-    if (id_nv[i][ii] !== id_nv[i][ii]) id_nv[i][ii] = 0;
-  // if (id_nv[i][3] == 0) id_nv[i][3] = Math.random();
-
-  /*
-  for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = 2 * Math.random() - 1;
-  id_nv[i][0] = Math.abs(id_nv[i][0]);
-  var ts = 0;
-  for (var ii = 0; ii < v_len; ii++) ts += id_nv[i][ii] * id_nv[i][ii];
-  ts = Math.sqrt(ts);
-  for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] /= ts;
-  */
+  } catch {
+    for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = 0;
 
     /*
-  if (i == 1)
-  if (i > 7)
-    for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = id_nv[i-8][ii];
-  */
-  // for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = 0;
+    */
+    for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] = 2 * Math.random() - 1;
+    id_nv[i][0] = Math.abs(id_nv[i][0]);
+    var ts = 0;
+    for (var ii = 0; ii < v_len; ii++) ts += id_nv[i][ii] * id_nv[i][ii];
+    ts = Math.sqrt(ts);
+    for (var ii = 0; ii < v_len; ii++) id_nv[i][ii] /= ts;
+  }
+  for (var ii = 0; ii < v_len; ii++)
+    if (id_nv[i][ii] !== id_nv[i][ii]) id_nv[i][ii] = 0;
 }
 
-// const temp_vec = id_nv[5];
-// id_nv[5] = id_nv[6];
-// id_nv[6] = temp_vec;
+const low_nv = [];
+const high_nv = [];
+const nlow_nv = [];
+const nhigh_nv = [];
+for (var i = 0; i < num_facets; i++) {
+  low_nv[i] = [];
+  high_nv[i] = [];
+  for (var ii = 0; ii < v_len; ii++) low_nv[i][ii] = 0;
+  for (var ii = 0; ii < v_len; ii++) high_nv[i][ii] = 0;
+  nlow_nv[i] = [];
+  nhigh_nv[i] = [];
+  for (var ii = 0; ii < v_len; ii++) nlow_nv[i][ii] = 0;
+  for (var ii = 0; ii < v_len; ii++) nhigh_nv[i][ii] = 0;
+}
+
 for (var i = 0; i < num_facets; i++)
   for (var ii = 0; ii < v_len; ii++)
     tid_nv[i][ii] = id_nv[i][ii];
 
 const tick_v = [];
 const tick_nv = [];
+const maxb_nv = [];
+const maxa_nv = [];
 const otick_nv = [];
 var aamidp16 = 0;
 var aamidp32 = 0;
+var aamidp64 = 0;
 var aamidps16 = 0;
 var aamidps32 = 0;
+var aamidps64 = 0;
 
 const profit_id_count = [];
 const profit_id = [];
@@ -78,6 +89,7 @@ for (var i = 0; i < num_facets; i++) aprofit_id[i] = 0;
 const aspread = Number(fs.readFileSync('aspread','utf8'));
 console.log('doMain ' + new Date());
 var back_profit = 0;
+var back_count = 0;
 var aback_profit = 0;
 var back_profit_max = 0;
 var max_dd = 0;
@@ -110,13 +122,14 @@ for (var i = 0; i < num_facets; i++) {
       if (l[ii] == '') continue;
       vv_pos[i][ii] = Number(l[ii]);
     }
-  } catch {}
+  } catch { }
   for (var ii = 0; ii < num_facets; ii++) {
-    // vv_pos[i][ii] = 1;
+    // vv_pos[i][ii] = 3;
     tvv_pos[i][ii] = vv_pos[i][ii];
     tvv_posc[i][ii] = 0;
     tvv_poss[i][ii] = 0;
   }
+  // console.log(vv_pos[i].join(' '));
 }
 const hit_count = [];
 for (var i = 0; i < num_facets; i++) hit_count[i] = 0;
@@ -128,14 +141,16 @@ var ov_id = 0;
 var v_id = 0;
 var current_ask = 0;
 var current_bid = 0;
-var smode = 3;
+var smode = 0;
 var delay_n = 0;
 var amidp8 = 0;
 var amidp16 = 0;
 var amidp32 = 0;
+var amidp64 = 0;
 var amidps8 = 0;
 var amidps16 = 0;
 var amidps32 = 0;
+var amidps64 = 0;
 var dmidp = 0,dmidps = 0;
 var tick_count = 0;
 const cut_v = [];
@@ -147,10 +162,13 @@ try {
 } catch {}
 var poscs = 0;
 var max_tps = 0;
+var first_flag = 0;
 async function doMain() {
-  var back_profit0 = -1e9;
-  var back_profit1 = 0;
-  var back_profit2 = 0;
+  var back_profit0 = 0; // Number(fs.readFileSync('back_profit0','utf8'));
+  var back_profit1 = 0; // Number(fs.readFileSync('back_profit1','utf8'));
+  var bp0 = 0; // Number(fs.readFileSync('bp0','utf8'));
+  var bp1 = 0; // Number(fs.readFileSync('bp1','utf8'));
+  // var bp0 = 0, bp1 = 0, bp2 = 0;
   while (true) {
     for (var i = 0; i < v_len; i++) {
       tick_v[i] = 1;
@@ -182,6 +200,7 @@ async function doMain() {
     back_buyp = 0;
     back_sellp = 0;
     back_profit = 0;
+    back_count = 0;
     aback_profit = 0;
     back_profit_max = 0;
     back_nav = 1;
@@ -194,28 +213,186 @@ async function doMain() {
     amidp8 = 0;
     amidp16 = 0;
     amidp32 = 0;
+    amidp64 = 0;
     amidps8 = 0;
     amidps16 = 0;
     amidps32 = 0;
     aamidp16 = 0;
     aamidp32 = 0;
+    aamidp64 = 0;
     aamidps16 = 0;
     aamidps32 = 0;
+
+    aamidp16 = 0;
+    aamidp32 = 0;
+    aamidp64 = 0;
+    aamidps16 = 0;
+    aamidps32 = 0;
+    aamidps64 = 0;
+
     dmidp = 0;
     dmidps = 0;
     tick_count = 0;
     trade_count = 0;
+
+    dir = 1;
 
     const tick_file = await fsPromises.open('../data/ticks-hist');
     // const tick_file = await fsPromises.open('../ticks');
     for await (const line of tick_file.readLines())
       await doTickLine(line);
 
-      /// this tps sucks
-    // var tps = 0;
-    // for (var i = 0; i < num_facets; i++)
-    // for (var ii = 0; ii < num_facets; ii++)
-      // tps += Math.abs(tvv_poss[i][ii]);
+      /*
+    for (var i = 0; i < num_facets; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < v_len; ii++) {
+        if (low_nv[i][ii] >= 0) tstr += ' ';
+        tstr += ' ' + low_nv[i][ii].toExponential(2);
+      }
+      console.log(tstr);
+    }
+    console.log('---');
+    for (var i = 0; i < num_facets; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < v_len; ii++) {
+        if (nlow_nv[i][ii] >= 0) tstr += ' ';
+        tstr += ' ' + nlow_nv[i][ii].toExponential(2);
+      }
+      console.log(tstr);
+    }
+    console.log('---');
+    console.log('---');
+    for (var i = 0; i < num_facets; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < v_len; ii++) {
+        if (high_nv[i][ii] >= 0) tstr += ' ';
+        tstr += ' ' + high_nv[i][ii].toExponential(2);
+      }
+      console.log(tstr);
+    }
+    console.log('---');
+    for (var i = 0; i < num_facets; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < v_len; ii++) {
+        if (nhigh_nv[i][ii] >= 0) tstr += ' ';
+        tstr += ' ' + nhigh_nv[i][ii].toExponential(2);
+      }
+      console.log(tstr);
+    }
+    */
+    back_profit0 *= 0.999;
+    back_profit0 += back_profit / back_count / 1000;
+    var constr =
+      ' bp ' + back_profit.toExponential(4)
+      + ' c ' + back_count
+      + ' f ' + num_facets
+      + ' d ' + treg_div.toExponential(3)
+      + ' l ' + tleg.toExponential(3)
+      ;
+
+    if (num_facets < 32) {
+      // if (num_facets == 2) {
+        reg_div *= 2; treg_div = reg_div;
+      // }
+      for (var i = num_facets; i < 2 * num_facets; i++) {
+        low_nv[i] = [];
+        high_nv[i] = [];
+        for (var ii = 0; ii < v_len; ii++) {
+          low_nv[i][ii] = low_nv[i-num_facets][ii];
+          high_nv[i][ii] = high_nv[i-num_facets][ii];
+        }
+        nlow_nv[i] = [];
+        nhigh_nv[i] = [];
+        for (var ii = 0; ii < v_len; ii++) {
+          nlow_nv[i][ii] = nlow_nv[i-num_facets][ii];
+          nhigh_nv[i][ii] = nhigh_nv[i-num_facets][ii];
+        }
+      }
+      console.log(constr);
+      num_facets *= 2;
+      continue;
+    }
+
+    /*
+    if (smode == 0) {
+      smode = 1;
+      continue;
+    }
+    smode = 0;
+    */
+
+    if (first_flag == 0) {
+      if (bp0 != 0)
+      if (back_profit < bp0)
+        first_flag = 1;
+      bp0 = back_profit;
+      continue;
+    }
+    bp0 *= 0.99;
+    bp0 += back_profit / 100;
+    constr += ' ' + bp0.toExponential(4);
+    if (back_profit > bp0) {
+      reg_div *= 0.9;
+      reg_div += treg_div / 10;
+      // reg_div = treg_div;
+      leg *= 0.9;
+      leg += tleg / 10;
+      // leg = tleg;
+      div_n0 *= 0.9;
+      div_n0 += tdiv_n0 / 10;
+      // div_n0 = tdiv_n0;
+      div_n1 *= 0.9;
+      div_n1 += tdiv_n1 / 10;
+      // div_n1 = tdiv_n1;
+      div_n2 *= 0.9;
+      div_n2 += tdiv_n2 / 10;
+      // div_n2 = tdiv_n2;
+      div_n3 *= 0.9;
+      div_n3 += tdiv_n3 / 10;
+      // div_n3 = tdiv_n3;
+      fs.writeFileSync('reg_div',reg_div.toExponential(9) + '\n');
+      fs.writeFileSync('leg',leg.toExponential(9) + '\n');
+      fs.writeFileSync('div_n0',div_n0.toExponential(9) + '\n');
+      fs.writeFileSync('div_n1',div_n1.toExponential(9) + '\n');
+      fs.writeFileSync('div_n2',div_n2.toExponential(9) + '\n');
+      fs.writeFileSync('div_n3',div_n3.toExponential(9) + '\n');
+      constr += ' ' + div_n0.toFixed()
+        + ' ' + div_n1.toFixed()
+        + ' ' + div_n2.toFixed()
+        + ' ' + div_n3.toFixed()
+        ;
+    }
+
+    treg_div = reg_div * (1 + (2 * Math.random() - 1) / 10);
+    tleg = leg * (1 + (2 * Math.random() - 1) / 100);
+    tdiv_n0 = div_n0 * (1 + (2 * Math.random() - 1) / 100);
+    tdiv_n1 = div_n1 * (1 + (2 * Math.random() - 1) / 100);
+    tdiv_n2 = div_n2 * (1 + (2 * Math.random() - 1) / 100);
+    tdiv_n3 = div_n3 * (1 + (2 * Math.random() - 1) / 100);
+
+    console.log(constr);
+    continue;
+    for (var i = 0; i < 2 * band + 1; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < 2 * band + 1; ii++) {
+        if (typeof tsum[i][ii] == 'undefined') tstr += ' 0';
+        else tstr += ' ' + tsum[i][ii].toExponential(4);
+      }
+      fs.appendFileSync('tsum',tstr + '\n');
+    }
+    fs.renameSync('tsum','tsum0');
+    for (var i = 0; i < 2 * band + 1; i++) {
+      var tstr = '';
+      for (var ii = 0; ii < 2 * band + 1; ii++) {
+        if (typeof tsum[i][ii] == 'undefined') tstr += ' 0';
+        else tstr += ' ' + (tsum[i][ii]/tsumc[i][ii]).toExponential(4);
+      }
+      fs.appendFileSync('tsump',tstr + '\n');
+    }
+    fs.renameSync('tsump','tsump0');
+    continue;
+    process.exit();
+
     var tps = 0;
     var tpsc = 0;
     for (var i = 0; i < num_facets; i++)
@@ -235,6 +412,7 @@ async function doMain() {
       tdiv_n0.toFixed(),
       tdiv_n1.toFixed(),
       tdiv_n2.toFixed(),
+      tdiv_n3.toFixed(),
       trade_count,
       delay_n,
     );
@@ -247,7 +425,8 @@ async function doMain() {
     } else if (delay_n == 1) {
       // back_profit = 0;
       back_nav = 0;
-    } */
+    }
+    */
     if (back_nav > back_nav0) {
       // if ((delay_n != 5) && (delay_n != 0))
       if (delay_n != 0)
@@ -257,6 +436,7 @@ async function doMain() {
       div_n0 = tdiv_n0;
       div_n1 = tdiv_n1;
       div_n2 = tdiv_n2;
+      div_n3 = tdiv_n3;
       back_profit0 = back_profit;
       hit_total = thit_total;
       // if (back_nav > back_nav0) {
@@ -302,10 +482,12 @@ async function doMain() {
       tnum_facets = num_facets;
       await doDump();
       await doPrintLine();
-      fs.renameSync('profit_profile','profit_profile1');
+      try { fs.renameSync('profit_profile','profit_profile1'); }
+      catch {}
     } else {
-      fs.renameSync('profit_profile','profit_profile0');
-      if (delay_n != 1)
+      try { fs.renameSync('profit_profile','profit_profile0'); }
+      catch {}
+      if (delay_n == 5)
       if (back_profit > back_profit0) {
         if (tlevx > levx) {
           tlevx = levx * 0.999;
@@ -319,6 +501,7 @@ async function doMain() {
     tdiv_n0 = div_n0;
     tdiv_n1 = div_n1;
     tdiv_n2 = div_n2;
+    tdiv_n3 = div_n3;
     tnum_facets = num_facets;
     for (var i = 0; i < num_facets; i++)
       for (var ii = 0; ii < v_len; ii++)
@@ -336,19 +519,17 @@ async function doMain() {
     tlevx = levx;
 
     const ncut = [ 1, 0, 0, 0, 0 ];
-    if (back_profit0 > 0) {
+    // if (back_profit0 > 0) {
       ncut[0] = 0.05; // shift base vars
       ncut[1] = 0.5; // shift base vars
-      ncut[2] = 0.05; // take away a facet
-      ncut[3] = 0.05; // add facets
-      ncut[4] = 0.08;  // shift a facet
-
-    }
+      ncut[2] = -0.05; // take away a facet
+      ncut[3] = -0.05; // add facets
+      ncut[4] = -0.08;  // shift a facet
+    // }
     const ncutx = Math.random();
     // ncutx = 2;
     if (ncutx < ncut[0]) {
-      // tlevx = levx * (1 + (2 * Math.random() - 1) / 10);
-      tlevx = levx * 1.1;
+      tlevx = levx * (1 + (2 * Math.random() - 1) / 100);
       if (tlevx > 50) tlevx = 50;
       delay_n = 6;
     } else if (ncutx < ncut[1]) {
@@ -359,6 +540,8 @@ async function doMain() {
       if (tdiv_n1 < 1.1 * tdiv_n0) tdiv_n1 = 1.1 * tdiv_n0;
       tdiv_n2 = div_n2 * (1 + (2 * Math.random() - 1) / 10);
       if (tdiv_n2 < 1.1 * tdiv_n1) tdiv_n2 = 1.1 * tdiv_n1;
+      // tdiv_n3 = div_n3 * (1 + (2 * Math.random() - 1) / 10);
+      if (tdiv_n3 < 1.1 * tdiv_n2) tdiv_n3 = 1.1 * tdiv_n2;
 
       var i = Math.floor(num_facets * Math.random());
       for (var ii = 0; ii < v_len; ii++)
@@ -415,15 +598,19 @@ async function doMain() {
         for (var ii = 0; ii < num_facets; ii++)
           ts += tvv_posc[i][ii];
         /*
-      for (var i = 0; i < num_facets; i++) {
-        for (var ii = 0; ii < num_facets; ii++) {
-          if (tvv_poss[i][ii] / tvv_posc[i][ii] > aspread)
-            tvv_pos[i][ii] = 1;
-          else if (tvv_poss[i][ii] / tvv_posc[i][ii] < -aspread)
-            tvv_pos[i][ii] = 2;
-          else tvv_pos[i][ii] = 1;
+      */
+      // if (back_profit0 <= 0) {
+      if ((trade_count == 0) || (back_profit0 < 0)) {
+        for (var i = 0; i < num_facets; i++) {
+          for (var ii = 0; ii < num_facets; ii++) {
+            if (tvv_poss[i][ii] / tvv_posc[i][ii] > aspread)
+              tvv_pos[i][ii] = 1;
+            else if (tvv_poss[i][ii] / tvv_posc[i][ii] < -aspread)
+              tvv_pos[i][ii] = 2;
+            // else tvv_pos[i][ii] = 1;
+          }
         }
-      } */
+      }
       while (tt[tstr] == 1) {
         // console.log('hit ' + tstr);
         const x = ts * Math.random();
@@ -458,7 +645,8 @@ async function doMain() {
           if (Math.random() < 0.9) tvv_pos[maxi][maxii] = 2;
           else tvv_pos[maxi][maxii] = 3;
         }
-        /*
+
+          /*
         if (tvv_poss[maxi][maxii] > 0) {
           if (Math.random() <
             tvv_poss[maxi][maxii] / tvv_posc[maxi][maxii] / aspread
@@ -476,7 +664,7 @@ async function doMain() {
       }
       delay_n = 5;
       // tlevx = levx * (1 + (2 * Math.random() - 1) / 10);
-      tlevx = levx * 1.1;
+      tlevx = levx * 1.01;
       if (tlevx > 50) tlevx = 50;
     }
     for (var i = 0; i < num_facets; i++)
@@ -525,35 +713,44 @@ async function doDump() {
   fs.writeFileSync('div_n0',div_n0.toExponential(19) + '\n');
   fs.writeFileSync('div_n1',div_n1.toExponential(19) + '\n');
   fs.writeFileSync('div_n2',div_n2.toExponential(19) + '\n');
+  fs.writeFileSync('div_n3',div_n3.toExponential(19) + '\n');
   fs.writeFileSync('num_facets',num_facets + '\n');
   fs.writeFileSync('levx',levx.toExponential(9) + '\n');
   candle_count = 0;
 }
 
-async function doAves(n1,n2,n3) {
-  amidp8 *= 1 - 1 / n1;
-  amidp8 += dmidp / n1;
-  amidp16 *= 1 - 1 / n2;
-  amidp16 += dmidp / n2;
-  amidp32 *= 1 - 1 / n3;
-  amidp32 += dmidp / n3;
+async function doAves(n0,n1,n2,n3) {
+  amidp8 *= 1 - 1 / n0;
+  amidp8 += dmidp / n0;
+  amidp16 *= 1 - 1 / n1;
+  amidp16 += dmidp / n1;
+  amidp32 *= 1 - 1 / n2;
+  amidp32 += dmidp / n2;
+  amidp64 *= 1 - 1 / n3;
+  amidp64 += dmidp / n3;
 
-  amidps8 *= 1 - 1 / n1;
-  amidps8 += dmidps / n1;
-  amidps16 *= 1 - 1 / n2;
-  amidps16 += dmidps / n2;
-  amidps32 *= 1 - 1 / n3;
-  amidps32 += dmidps / n3;
+  amidps8 *= 1 - 1 / n0;
+  amidps8 += dmidps / n0;
+  amidps16 *= 1 - 1 / n1;
+  amidps16 += dmidps / n1;
+  amidps32 *= 1 - 1 / n2;
+  amidps32 += dmidps / n2;
+  amidps64 *= 1 - 1 / n3;
+  amidps64 += dmidps / n3;
 
-  aamidp16 *= 1 - 1 / n2;
-  aamidp16 += Math.abs(amidp8 - amidp16) / n2;
-  aamidp32 *= 1 - 1 / n3;
-  aamidp32 += Math.abs(amidp8 - amidp32) / n3;
+  aamidp16 *= 1 - 1 / n1;
+  aamidp16 += Math.abs(amidp8 - amidp16) / n1;
+  aamidp32 *= 1 - 1 / n2;
+  aamidp32 += Math.abs(amidp16 - amidp32) / n2;
+  aamidp64 *= 1 - 1 / n3;
+  aamidp64 += Math.abs(amidp32 - amidp64) / n3;
 
-  aamidps16 *= 1 - 1 / n2;
-  aamidps16 += Math.abs(amidps8 - amidps16) / n2;
-  aamidps32 *= 1 - 1 / n3;
-  aamidps32 += Math.abs(amidps8 - amidps32) / n3;
+  aamidps16 *= 1 - 1 / n1;
+  aamidps16 += Math.abs(amidps8 - amidps16) / n1;
+  aamidps32 *= 1 - 1 / n2;
+  aamidps32 += Math.abs(amidps16 - amidps32) / n2;
+  aamidps64 *= 1 - 1 / n3;
+  aamidps64 += Math.abs(amidps32 - amidps64) / n3;
 }
 
 var cutx = Number(fs.readFileSync('cutx','utf8'));
@@ -564,55 +761,139 @@ var div_n1 = Number(fs.readFileSync('div_n1','utf8'));
 var tdiv_n1 = div_n1;
 var div_n2 = Number(fs.readFileSync('div_n2','utf8'));
 var tdiv_n2 = div_n2;
+var div_n3 = Number(fs.readFileSync('div_n3','utf8'));
+var tdiv_n3 = div_n3;
 var tprof_div = 1;
+const tsum = [];
+const tsumc = [];
+const band = 15;
+var odi1 = -1;
+var odi2 = -1;
+const dilst = [];
+var opt_a = 1;
+var opt_b = 1;
+var test_a = opt_a;
+var test_b = 1;
+var dir = 1;
+var leg = Number(fs.readFileSync('leg','utf8'));
+var tleg = leg;
 async function doTickLine(line) {
   var lst = line.split(' ');
   if (lst.length < 3) return;
   current_bid = Number(lst[1]);
   // current_ask = Number(lst[2]);
   current_ask = current_bid + aspread;
+  if (maxb == 0) { maxb = current_bid; maxa = current_ask; }
   const midp = (current_ask + current_bid) / 2;
   if (omidp !== omidp) omidp = midp;
   dmidp = (midp - omidp) / omidp;
   dmidps = Math.abs(dmidp);
   tick_count++;
   omidp = midp;
-  if (tick_count > tdiv_n2) await doAves(tdiv_n0,tdiv_n1,tdiv_n2);
-  else if (tick_count > tdiv_n1) await doAves(tdiv_n0,tdiv_n1,tick_count);
-  else if (tick_count > tdiv_n0) await doAves(tdiv_n0,tick_count,tick_count);
-  else await doAves(tick_count,tick_count,tick_count);
 
+  if (tick_count > tdiv_n3) await doAves(tdiv_n0,tdiv_n1,tdiv_n2,tdiv_n3);
+  else if (tick_count > tdiv_n2) await doAves(tdiv_n0,tdiv_n1,tdiv_n2,tick_count);
+  else if (tick_count > tdiv_n1) await doAves(tdiv_n0,tdiv_n1,tick_count,tick_count);
+  else if (tick_count > tdiv_n0) await doAves(tdiv_n0,tick_count,tick_count,tick_count);
+  else await doAves(tick_count,tick_count,tick_count,tick_count);
 
   tick_v[0] = 1;
   tick_v[1] = (amidp8 - amidp16) / aamidp16;
-  tick_v[2] = (amidp8 - amidp32) / aamidp32;
-  tick_v[3] = (amidps8 - amidps16) / aamidps16;
-  tick_v[4] = (amidps8 - amidps32) / aamidps32;
+  tick_v[2] = (amidp16 - amidp32) / aamidp32;
+  tick_v[3] = (amidp32 - amidp64) / aamidp64;
 
-  tick_v[5] = (amidp16 - amidp32) / aamidp32;
+  tick_v[4] = (amidps8 - amidps16) / aamidps16;
+  tick_v[5] = (amidps16 - amidps32) / aamidps32;
+  tick_v[6] = (amidps32 - amidps64) / aamidps64;
 
   for (var i = 0; i < v_len; i++) otick_nv[i] = tick_nv[i];
   var vs = 0;
   for (var i = 0; i < v_len; i++) vs += tick_v[i] * tick_v[i];
   vs = Math.sqrt(vs);
   if (vs > 0) for (var i = 0; i < v_len; i++) tick_nv[i] = tick_v[i] / vs;
-  var tdot = 0;
-  var dot_max = -2;
-  var i_max = -1;
-  if (v_id >= 0) {
-    for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * tid_nv[v_id][ii];
-    dot_max = tdot + tcutx;
-    i_max = v_id;
-  }
-  for (var i = 0; i < tnum_facets; i++) {
-    if (i == v_id) continue;
-    tdot = 0;
-    for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * tid_nv[i][ii];
-    if (tdot > dot_max) {
-      dot_max = tdot;
-      i_max = i;
+
+  // if (smode == 0) {
+    if (dir == 1) {
+      if (current_bid > maxb) {
+        maxb = current_bid;
+        for (var i = 0; i < v_len; i++) maxb_nv[i] = tick_nv[i];
+        await doRegisterNHigh();
+      }
+      if (current_ask < maxb - tleg * aspread) {
+        await doRegisterHigh();
+        maxa = current_ask;
+        for (var i = 0; i < v_len; i++) maxa_nv[i] = tick_nv[i];
+        dir = 2;
+      }
+    } else if (dir == 2) {
+      if (current_ask < maxa) {
+        maxa = current_ask;
+        for (var i = 0; i < v_len; i++) maxa_nv[i] = tick_nv[i];
+        await doRegisterNLow();
+      }
+      if (current_bid > maxa + tleg * aspread) {
+        await doRegisterLow();
+        maxb = current_bid;
+        for (var i = 0; i < v_len; i++) maxb_nv[i] = tick_nv[i];
+        dir = 1;
+      }
     }
-  }
+  // } else {
+    var low_dot = 0;
+    var high_dot = 0;
+    if (back_pos == 0) {
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * low_nv[i][ii];
+        if (tdot > low_dot) low_dot = tdot;
+      }
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * high_nv[i][ii];
+        if (tdot > high_dot) high_dot = tdot;
+      }
+      if (high_dot > low_dot) {
+        back_pos = 2;
+        // back_profit += current_bid - back_price;
+        back_price = current_bid;
+        // back_count++;
+      } else {
+        back_pos = 1;
+        // back_profit += back_price - current_ask;
+        back_price = current_ask;
+        // back_count++;
+      }
+    } else if (back_pos == 1) {
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * nhigh_nv[i][ii];
+        if (tdot > low_dot) low_dot = tdot;
+      }
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * high_nv[i][ii];
+        if (tdot > high_dot) high_dot = tdot;
+      }
+      if (high_dot > low_dot) {
+        back_pos = 2;
+        back_profit += current_bid - back_price;
+        back_price = current_bid;
+        back_count++;
+      }
+    } else if (back_pos == 2) {
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * low_nv[i][ii];
+        if (tdot > low_dot) low_dot = tdot;
+      }
+      for (var i = 0; i < num_facets; i++) { var tdot = 0;
+        for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * nlow_nv[i][ii];
+        if (tdot > high_dot) high_dot = tdot;
+      }
+      if (high_dot < low_dot) {
+        back_pos = 1;
+        back_profit += back_price - current_ask;
+        back_price = current_ask;
+        back_count++;
+      }
+    }
+  // }
+  return;
   if (i_max != v_id) {
     const oback_mid = back_mid;
     back_mid = (current_ask + current_bid) / 2;
@@ -642,6 +923,7 @@ async function doTickLine(line) {
             max_dd = back_profit_max - back_profit;
           */
           fs.appendFileSync('profit_profile',
+            tick_count + ' ' +
             midp.toFixed(5) + ' ' +
             back_profit.toExponential(5) + '\n');
           profit_id_l[v_id] += prof_t;
@@ -661,6 +943,7 @@ async function doTickLine(line) {
             max_dd = back_profit_max - back_profit;
           */
           fs.appendFileSync('profit_profile',
+            tick_count + ' ' +
             midp.toFixed(5) + ' ' +
             back_profit.toExponential(5) + '\n');
           profit_id_l[v_id] += prof_t;
@@ -684,6 +967,7 @@ async function doTickLine(line) {
             max_dd = back_profit_max - back_profit;
           */
           fs.appendFileSync('profit_profile',
+            tick_count + ' ' +
             midp.toFixed(5) + ' ' +
             back_profit.toExponential(5) + '\n');
           profit_id_s[v_id] += prof_t;
@@ -703,6 +987,7 @@ async function doTickLine(line) {
             max_dd = back_profit_max - back_profit;
           */
           fs.appendFileSync('profit_profile',
+            tick_count + ' ' +
             midp.toFixed(5) + ' ' +
             back_profit.toExponential(5) + '\n');
           profit_id_s[v_id] += prof_t;
@@ -730,6 +1015,92 @@ async function doTickLine(line) {
   }
 }
 
+var reg_div = 1000; // Number(fs.readFileSync('reg_div','utf8'));
+var treg_div = reg_div;
+async function doRegisterHigh() {
+  var dot_max = -2;
+  var i_max = -1;
+  var tdot = 0;
+  for (var i = 0; i < num_facets; i++) {
+    tdot = 0;
+    for (var ii = 0; ii < v_len; ii++) tdot += maxb_nv[ii] * high_nv[i][ii];
+    if (tdot > dot_max) {
+      dot_max = tdot;
+      i_max = i;
+    }
+  }
+  var ts = 0;
+  for (var ii = 0; ii < v_len; ii++) {
+    high_nv[i_max][ii] += maxb_nv[ii] / treg_div;
+    ts += high_nv[i_max][ii] * high_nv[i_max][ii];
+  }
+  ts = Math.sqrt(ts);
+  if (ts > 0) for (var ii = 0; ii < v_len; ii++) high_nv[i_max][ii] /= ts;
+}
+
+async function doRegisterNHigh() {
+  var dot_max = -2;
+  var i_max = -1;
+  var tdot = 0;
+  for (var i = 0; i < num_facets; i++) {
+    tdot = 0;
+    for (var ii = 0; ii < v_len; ii++) tdot += maxb_nv[ii] * nhigh_nv[i][ii];
+    if (tdot > dot_max) {
+      dot_max = tdot;
+      i_max = i;
+    }
+  }
+  var ts = 0;
+  for (var ii = 0; ii < v_len; ii++) {
+    nhigh_nv[i_max][ii] += maxb_nv[ii] / treg_div;
+    ts += nhigh_nv[i_max][ii] * nhigh_nv[i_max][ii];
+  }
+  ts = Math.sqrt(ts);
+  if (ts > 0) for (var ii = 0; ii < v_len; ii++) nhigh_nv[i_max][ii] /= ts;
+}
+
+async function doRegisterLow() {
+  var dot_max = -2;
+  var i_max = -1;
+  var tdot = 0;
+  for (var i = 0; i < num_facets; i++) {
+    tdot = 0;
+    for (var ii = 0; ii < v_len; ii++) tdot += maxa_nv[ii] * low_nv[i][ii];
+    if (tdot > dot_max) {
+      dot_max = tdot;
+      i_max = i;
+    }
+  }
+  var ts = 0;
+  for (var ii = 0; ii < v_len; ii++) {
+    low_nv[i_max][ii] += maxa_nv[ii] / treg_div;
+    ts += low_nv[i_max][ii] * low_nv[i_max][ii];
+  }
+  ts = Math.sqrt(ts);
+  if (ts > 0) for (var ii = 0; ii < v_len; ii++) low_nv[i_max][ii] /= ts;
+}
+
+async function doRegisterNLow() {
+  var dot_max = -2;
+  var i_max = -1;
+  var tdot = 0;
+  for (var i = 0; i < num_facets; i++) {
+    tdot = 0;
+    for (var ii = 0; ii < v_len; ii++) tdot += maxa_nv[ii] * nlow_nv[i][ii];
+    if (tdot > dot_max) {
+      dot_max = tdot;
+      i_max = i;
+    }
+  }
+  var ts = 0;
+  for (var ii = 0; ii < v_len; ii++) {
+    nlow_nv[i_max][ii] += maxa_nv[ii] / treg_div;
+    ts += nlow_nv[i_max][ii] * nlow_nv[i_max][ii];
+  }
+  ts = Math.sqrt(ts);
+  if (ts > 0) for (var ii = 0; ii < v_len; ii++) nlow_nv[i_max][ii] /= ts;
+}
+
 const good_candle = [];
 const bad_candle = [];
 const bgood_candle = [];
@@ -749,5 +1120,7 @@ async function doMadeDelay(midp,pvar) {
 try { fs.renameSync('err_profile','err_profile0');
 } catch {}
 try { fs.renameSync('profit_profile','profit_profile0');
+} catch {}
+try { fs.renameSync('dist','dist0');
 } catch {}
 doMain();

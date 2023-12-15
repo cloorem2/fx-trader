@@ -55,11 +55,12 @@ const get_order_options = {
 }
 
 const num_facets = Number(fs.readFileSync('num_facets','utf8'));
-const v_len = 6;
+const v_len = 7;
 const cutx = Number(fs.readFileSync('cutx','utf8'));
 const div_n0 = Number(fs.readFileSync('div_n0','utf8'));
 const div_n1 = Number(fs.readFileSync('div_n1','utf8'));
 const div_n2 = Number(fs.readFileSync('div_n2','utf8'));
+const div_n3 = Number(fs.readFileSync('div_n3','utf8'));
 
 const id_nv = [];
 for (var i = 0; i < num_facets; i++) {
@@ -73,16 +74,24 @@ for (var i = 0; i < num_facets; i++) {
 }
 const tick_v = [];
 const tick_nv = [];
+
 var aamidp16 = 0;
 var aamidp32 = 0;
+var aamidp64 = 0;
+
 var aamidps16 = 0;
 var aamidps32 = 0;
+var aamidps64 = 0;
+
 var amidp8 = 0;
 var amidp16 = 0;
 var amidp32 = 0;
+var amidp64 = 0;
+
 var amidps8 = 0;
 var amidps16 = 0;
 var amidps32 = 0;
+var amidps64 = 0;
 
 const vv_pos = [];
 for (var i = 0; i < num_facets; i++) {
@@ -96,11 +105,10 @@ for (var i = 0; i < num_facets; i++) {
 
 
 
-console.log('doMain ' + new Date());
+// console.log('doMain ' + new Date());
 var chunk_save = '';
 var linec = 0;
-// var levx = Number(fs.readFileSync('opt_levx','utf8'));
-var levx = Number(fs.readFileSync('levx','utf8'));
+var levx = Number(fs.readFileSync('levx','utf8')) / 2;
 var pos = Number(fs.readFileSync('pos','utf8'));
 var nav = Number(fs.readFileSync('nav','utf8'));
 
@@ -115,6 +123,7 @@ var omidp = 0 / 0;
 var current_ask = 0; // Number(fs.readFileSync('current_ask','utf8'));
 var current_bid = 0; // Number(fs.readFileSync('current_bid','utf8'));
 
+var order_placed = 0;
 var order_id = 0;
 // try { order_id = Number(fs.readFileSync('order_id','utf8')); } catch {}
 var sell_order_id = Number(fs.readFileSync('sell_order_id','utf8'));
@@ -159,6 +168,9 @@ function doSummary() {
             nav -= Number(positions[ii].short.unrealizedPL);
           }
         }
+        if (pos > 0) obase_pos = 1;
+        else if (pos < 0) obase_pos = -1;
+        else obase_pos = 0;
         fs.writeFileSync('nav',nav.toExponential(9) + '\n');
         fs.writeFileSync('pos',pos.toFixed() + '\n');
         if (nav_mark == 0) {
@@ -239,8 +251,8 @@ async function doTransData(data) {
       fs.writeFileSync('withdraw_not_ready',withdraw_not_ready + '\n');
     }
     const tnav = Number(data.accountBalance) - nav_withdraw;
-    adnav *= 0.99;
-    adnav += (tnav - nav) / nav / 100;
+    adnav *= 0.9;
+    adnav += (tnav - nav) / nav / 10;
     nav = tnav;
     if (nav > 4 * nav_mark) {
       nav_withdraw += nav * 0.5;
@@ -254,7 +266,11 @@ async function doTransData(data) {
         + ' to new mark ' + nav_mark.toFixed(2));
     }
     pos += Number(data.units);
-    con_str = data.price + '  ' + data.units + ' pos ' + pos;
+    con_str = data.price + '  ';
+    if (Number(data.units) >= 0) con_str += ' ';
+    con_str += data.units + ' pos ';
+    if (pos >= 0) con_str += ' ';
+    con_str += pos;
 
     if (Number(data.orderID) == sell_order_id) {
       sell_order_id = 0;
@@ -268,6 +284,7 @@ async function doTransData(data) {
       if (data.reason == 'MARKET_ORDER') {
         // console.log('market order ' + con_str);
         doPrintLine();
+        order_placed = 0;
       } else {
         console.log('so wtf is this');
         console.log(data);
@@ -403,7 +420,7 @@ async function doTransData(data) {
 var main_json = '';
 var gcount = 0;
 function doMain() {
-  // console.log('doMain ' + new Date());
+  console.log('doMain ' + new Date());
   var req = https.request(options, function(res) {
     res.setEncoding('utf8');
     res.on('data', function (sum_chunk) {
@@ -463,8 +480,13 @@ async function doChunk(data) {
   current_ask = Number(data.asks[0].price);
   await doGotPrice();
   const [t0,t1] = data.time.split('T');
-  const [t2] = t1.split('Z');
-  const new_pstr = t2
+  const [t2,t3,t4] = t0.split('-');
+  const [t5] = t1.split('Z');
+  const [t6,t7,t8] = t5.split(':');
+  var [t9,t10] = Number(t8).toFixed(3).split('.');
+  while (t9.length < 2) t9 = '0' + t9;
+  const t11 = t2 + t3 + t4 + t6 + t7 + t9 + t10;
+  const new_pstr = t11
     + ' ' + current_bid.toFixed(5)
     + ' ' + current_ask.toFixed(5)
     + '\n';
@@ -479,8 +501,42 @@ var dmidp = 0;
 var dmidps = 0;
 var ov_id = -1;
 var v_id = -1;
-var back_pos = 0;
 var id_str = '';
+
+const maxa_t = {};
+const maxb_t = {};
+const dir_t = {};
+const leg_t = {};
+const leg_id = [];
+const num_strats = 5;
+const prof_t = {};
+try {
+  var tc = 0;
+  // const d = fs.readFileSync('leg_t','utf8');
+  const d = fs.readFileSync('rdist2_leg_t_' + num_strats,'utf8');
+  for (var i of d.split('\n')) {
+    var ii = i.split(' ');
+    if (ii.length < 2) continue;
+    leg_t[ii[0]] = tc; // Number(ii[1]);
+    maxb_t[ii[0]] = Number(ii[1]); // 0;
+    maxa_t[ii[0]] = Number(ii[2]); // 0;
+    dir_t[ii[0]] = Number(ii[3]); // 0;
+    leg_id[tc] = ii[0];
+    tc++;
+  }
+} catch {}
+try {
+  const d = fs.readFileSync('prof_t_' + num_strats,'utf8');
+  for (var i of d.split('\n')) {
+    var ii = i.split(' ');
+    if (ii.length < 2) continue;
+    prof_t[ii[0]] = Number(ii[1]);
+  }
+} catch {}
+
+var obase_pos = 0;
+var base_pos = 0;
+var dir_t_str = '';
 async function doGotPrice() {
   const midp = (current_ask + current_bid) / 2;
   if (omidp !== omidp) omidp = midp;
@@ -488,84 +544,132 @@ async function doGotPrice() {
   dmidps = Math.abs(dmidp);
   tick_count++;
   omidp = midp;
-  if (tick_count > div_n2) await doAves(div_n0,div_n1,div_n2);
-  else if (tick_count > div_n1) await doAves(div_n0,div_n1,tick_count);
-  else if (tick_count > div_n0) await doAves(div_n0,tick_count,tick_count);
-  else await doAves(tick_count,tick_count,tick_count);
-  tick_v[0] = 1;
-  tick_v[1] = (amidp8 - amidp16) / aamidp16;
-  tick_v[2] = (amidp8 - amidp32) / aamidp32;
-  tick_v[3] = (amidps8 - amidps16) / aamidps16;
-  tick_v[4] = (amidps8 - amidps32) / aamidps32;
 
-  tick_v[5] = (amidp16 - amidp32) / aamidp32;
-
-  var vs = 0;
-  for (var i = 0; i < v_len; i++) vs += tick_v[i] * tick_v[i];
-  vs = Math.sqrt(vs);
-  if (vs > 0) for (var i = 0; i < v_len; i++) tick_nv[i] = tick_v[i] / vs;
-  var tdot = 0;
-  var dot_max = -2;
-  var i_max = -1;
-  if (v_id >= 0) {
-    for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * id_nv[v_id][ii];
-    dot_max = tdot + cutx;
-    i_max = v_id;
-  }
-  for (var i = 0; i < num_facets; i++) {
-    if (i == v_id) continue;
-    tdot = 0;
-    for (var ii = 0; ii < v_len; ii++) tdot += tick_nv[ii] * id_nv[i][ii];
-    if (tdot > dot_max) {
-      dot_max = tdot;
-      i_max = i;
+  base_pos = 0;
+  // for (var i in leg_t) {
+  var dir_key = '';
+  for (var i = 0; i < num_strats; i++) {
+    var t = leg_id[i];
+    await doDir(t);
+    if (dir_t[t] == 1) dir_key += '1';
+    else if (dir_t[t] == -1) dir_key += '2';
+    else { dir_key += '0';
+      console.log('dir_key should not be getting this 0');
     }
+    // base_pos += dir_t[i] * leg_t[i];
   }
-  if (i_max != v_id) {
-    if (v_id >= 0) {
-      const oback_pos = back_pos;
-      if (vv_pos[i_max][v_id] == 3) back_pos = oback_pos;
-      else back_pos = vv_pos[i_max][v_id];
+  if (typeof prof_t[dir_key] == 'undefined') {
+    console.log('why key ' + dir_key + ' zero');
+    console.log(prof_t);
+    return;
+  }
+  if (prof_t[dir_key] > 0) base_pos = 1;
+  else if (prof_t[dir_key] < 0) base_pos = -1;
+  else base_pos = obase_pos;
 
-      if ((back_pos == 1) && (oback_pos != 1) && (loading == 0)) {
-        const size = Math.floor(levx * nav / midp - pos);
-        if (size > 0) await doMarketOrder(size);
-      }
-      if ((back_pos == 2) && (oback_pos != 2) && (loading == 0)) {
-        const size = Number((levx * nav / midp + pos).toFixed());
-        if (size > 0) await doMarketOrder(-size);
+  if (loading == 0) {
+    if (base_pos != obase_pos) {
+      if (order_placed == 0) {
+        if (base_pos > 0) {
+          const size = Math.floor(levx * nav / midp - pos);
+          // if (size > 0)
+            await doMarketOrder(size);
+          fs.appendFileSync('profile-buy',tick_count
+            + ' ' + current_ask + ' ' + size + '\n');
+        }
+        if (base_pos < 0) {
+          const size = Math.floor(levx * nav / midp + pos);
+          // if (size > 0)
+            await doMarketOrder(-size);
+          fs.appendFileSync('profile-sell',tick_count
+            + ' ' + current_bid + ' ' + size + '\n');
+        }
+        obase_pos = base_pos;
       }
     }
-    if (loading == 0) id_str += ' ' + i_max;
-    ov_id = v_id;
-    v_id = i_max;
+    var fstr = '';
+    for (var i = 0; i < num_strats; i++) {
+      var t = leg_id[i];
+      if (dir_t[t] == 1)
+        fstr += t
+          + ' ' + maxb_t[t]
+          + ' ' + (maxb_t[t] - Number(t)).toFixed(5)
+          + ' ' + dir_t[t] + '\n';
+      if (dir_t[t] == -1)
+        fstr += t
+          + ' ' + (maxa_t[t] + Number(t)).toFixed(5)
+          + ' ' + maxa_t[t]
+          + ' ' + dir_t[t] + '\n';
+    }
+    if (dir_t_str.indexOf(fstr) < 0) {
+      dir_t_str = fstr;
+      fs.writeFileSync('dir_t',fstr);
+    }
   }
 }
 
-async function doAves(n1,n2,n3) {
-  amidp8 *= 1 - 1 / n1;
-  amidp8 += dmidp / n1;
-  amidp16 *= 1 - 1 / n2;
-  amidp16 += dmidp / n2;
-  amidp32 *= 1 - 1 / n3;
-  amidp32 += dmidp / n3;
+async function doDir(tag) {
+  const nleg = Number(tag);
+  if (maxb_t[tag] == 0) {
+    maxb_t[tag] = current_bid;
+    maxa_t[tag] = current_ask;
+  }
+  if (dir_t[tag] == 0) {
+    if (current_bid > maxb_t[tag]) {
+      maxb_t[tag] = current_bid;
+      if (maxb_t[tag] - maxa_t[tag] > nleg) dir_t[tag] = 1;
+    }
+    if (current_ask < maxa_t[tag]) {
+      maxa_t[tag] = current_ask;
+      if (maxb_t[tag] - maxa_t[tag] > nleg) dir_t[tag] = -1;
+    }
+  } else if (dir_t[tag] == 1) {
+    if (current_bid > maxb_t[tag]) maxb_t[tag] = current_bid;
+    if (current_ask < maxb_t[tag] - nleg) {
+      maxa_t[tag] = current_ask;
+      dir_t[tag] = -1;
+    }
+  } else if (dir_t[tag] == -1) {
+    if (current_ask < maxa_t[tag]) maxa_t[tag] = current_ask;
+    if (current_bid > maxa_t[tag] + nleg) {
+      maxb_t[tag] = current_bid;
+      dir_t[tag] = 1;
+    }
+  }
+}
 
-  amidps8 *= 1 - 1 / n1;
-  amidps8 += dmidps / n1;
-  amidps16 *= 1 - 1 / n2;
-  amidps16 += dmidps / n2;
-  amidps32 *= 1 - 1 / n3;
-  amidps32 += dmidps / n3;
+async function doAves(n0,n1,n2,n3) {
+  amidp8 *= 1 - 1 / n0;
+  amidp8 += dmidp / n0;
+  amidp16 *= 1 - 1 / n1;
+  amidp16 += dmidp / n1;
+  amidp32 *= 1 - 1 / n2;
+  amidp32 += dmidp / n2;
+  amidp64 *= 1 - 1 / n3;
+  amidp64 += dmidp / n3;
 
-  aamidp16 *= 1 - 1 / n2;
-  aamidp16 += Math.abs(amidp8 - amidp16) / n2;
-  aamidp32 *= 1 - 1 / n3;
-  aamidp32 += Math.abs(amidp8 - amidp32) / n3;
+  amidps8 *= 1 - 1 / n0;
+  amidps8 += dmidps / n0;
+  amidps16 *= 1 - 1 / n1;
+  amidps16 += dmidps / n1;
+  amidps32 *= 1 - 1 / n2;
+  amidps32 += dmidps / n2;
+  amidps64 *= 1 - 1 / n3;
+  amidps64 += dmidps / n3;
 
-  aamidps16 *= 1 - 1 / n2;
-  aamidps16 += Math.abs(amidps8 - amidps16) / n2;
-  aamidps32 *= 1 - 1 / n3;
-  aamidps32 += Math.abs(amidps8 - amidps32) / n3;
+  aamidp16 *= 1 - 1 / n1;
+  aamidp16 += Math.abs(amidp8 - amidp16) / n1;
+  aamidp32 *= 1 - 1 / n2;
+  aamidp32 += Math.abs(amidp16 - amidp32) / n2;
+  aamidp64 *= 1 - 1 / n3;
+  aamidp64 += Math.abs(amidp32 - amidp64) / n3;
+
+  aamidps16 *= 1 - 1 / n1;
+  aamidps16 += Math.abs(amidps8 - amidps16) / n1;
+  aamidps32 *= 1 - 1 / n2;
+  aamidps32 += Math.abs(amidps16 - amidps32) / n2;
+  aamidps64 *= 1 - 1 / n3;
+  aamidps64 += Math.abs(amidps32 - amidps64) / n3;
 }
 
 async function doTrade(midp) {
@@ -730,6 +834,7 @@ async function doUpdateOrder(price,size,order_id,order_touch) {
 async function doMarketOrder(size) {
   // console.log('doMarketOrder ' + size);
   if (size == 0) return;
+  order_placed = 1;
   const body = {
     order: {
       instrument: "EUR_USD",
@@ -906,22 +1011,46 @@ function doShowOrders() {
   req.end();
 }
 
+/*
+try {
+  fs.renameSync('profile-buy','profile-buy0');
+} catch {}
+try {
+  fs.renameSync('profile-sell','profile-sell0');
+} catch {}
+*/
 
           mutexc++;
           mutex = mutex.then(async () => {
             console.log('loading');
+            // const tick_file2 = await fsPromises.open('../data/ticks-hist');
+            // for await (const line of tick_file2.readLines())
+              // await doTickLine(line);
+            tick_count = 0;
             const tick_file = await fsPromises.open('../ticks');
             for await (const line of tick_file.readLines())
               await doTickLine(line);
             loading = 0;
-            console.log('done loading');
+            console.log('done loading pos ' + pos);
             // await doChunk(data);
+
+doSummary();
+doShowOrders();
+doTrimOrders();
+mainTimeout = setTimeout(() => { doMain(); }, 9000);
+
+doTransactions();
+transTimeout = setTimeout(() => { doTransactions(); }, 100000);
+
             mutexc--;
           }, (err) => { console.log('caught main mutex err here ' + err); }
           ).catch((err) => { console.log('caught mains mutex err ' + err);
           // }).finally(async () => {
             // if (mutexc > 0) console.log('got mutexc ' + mutexc);
           });
+var mainTimeout;
+var transTimeout;
+          /*
 doSummary();
 doShowOrders();
 doTrimOrders();
@@ -929,6 +1058,7 @@ var mainTimeout = setTimeout(() => { doMain(); }, 9000);
 
 doTransactions();
 var transTimeout = setTimeout(() => { doTransactions(); }, 100000);
+*/
 
 ///
 
@@ -943,12 +1073,13 @@ async function doPrintLine() {
     + ' ' + adnav.toExponential(3)
     ;
   if (con_str != '') tstr += ' --- ' + con_str;
-  tstr += ' ' + v_id;
-  if (ov_id >= 0) tstr += ' ' + vv_pos[v_id][ov_id];
+  tstr += ' ' + base_pos.toExponential(4);
+  // tstr += ' ' + v_id;
+  // if (ov_id >= 0) tstr += ' ' + vv_pos[v_id][ov_id];
   fs.appendFileSync('log',tstr + '\n');
   console.log(tstr);
   con_str = '';
 
-  fs.appendFileSync('log_id',id_str + '\n');
-  id_str = '';
+  // fs.appendFileSync('log_id',id_str + '\n');
+  // id_str = '';
 }

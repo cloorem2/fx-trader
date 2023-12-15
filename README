@@ -1,1 +1,3 @@
 test3 was the last to use candles
+test4 small id_nv matrix. highest dot product id_nv[i] * tick_nv identifies current v_id. v_id followed by certain ov_id signals trade from vv_pos
+test5 no vv_pos
