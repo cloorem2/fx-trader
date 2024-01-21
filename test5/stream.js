@@ -93,17 +93,6 @@ var amidps16 = 0;
 var amidps32 = 0;
 var amidps64 = 0;
 
-const vv_pos = [];
-for (var i = 0; i < num_facets; i++) {
-  vv_pos[i] = [];
-  const d = fs.readFileSync('vv_pos/' + i,'utf8');
-  const l = d.split('\n');
-  for (var ii = 0; ii < num_facets; ii++)
-    vv_pos[i][ii] = Number(l[ii]);
-}
-
-
-
 
 // console.log('doMain ' + new Date());
 var chunk_save = '';
@@ -255,8 +244,8 @@ async function doTransData(data) {
     adnav += (tnav - nav) / nav / 10;
     nav = tnav;
     if (nav > 4 * nav_mark) {
-      nav_withdraw += nav * 0.5;
-      fs.writeFileSync('nav_withdraw',nav_withdraw.toExponential(4) + '\n');
+      // nav_withdraw += nav * 0.5;
+      // fs.writeFileSync('nav_withdraw',nav_withdraw.toExponential(4) + '\n');
       nav *= 0.5;
       nav_mark = nav;
       fs.writeFileSync('nav_mark',nav_mark.toExponential(9) + '\n');
@@ -359,11 +348,9 @@ async function doTransData(data) {
     return;
   }
   if (data.type == 'TRANSFER_FUNDS') {
-    nav = Number(data.accountBalance);
-    nav_withdraw = 0;
+    nav = Number(data.accountBalance) - nav_withdraw;
     nav_mark = nav;
     fs.writeFileSync('nav',nav.toExponential(9) + '\n');
-    fs.writeFileSync('nav_withdraw',nav_withdraw.toExponential(4) + '\n');
     fs.writeFileSync('nav_mark',nav_mark.toExponential(9) + '\n');
     return;
   }
@@ -490,7 +477,7 @@ async function doChunk(data) {
     + ' ' + current_bid.toFixed(5)
     + ' ' + current_ask.toFixed(5)
     + '\n';
-  fs.appendFileSync('../ticks',new_pstr);
+  fs.appendFileSync('../ticks-2024',new_pstr);
   fs.writeFileSync('last_price',JSON.stringify(data) + '\n');
   // fs.writeFileSync('current_ask',current_ask + '\n');
   // fs.writeFileSync('current_bid',current_bid + '\n');
@@ -604,6 +591,11 @@ async function doGotPrice() {
     if (dir_t_str.indexOf(fstr) < 0) {
       dir_t_str = fstr;
       fs.writeFileSync('dir_t',fstr);
+    }
+    const nw = Number(fs.readFileSync('nav_withdraw','utf8'));
+    if (nw != nav_withdraw) {
+      nav += nav_withdraw - nw;
+      nav_withdraw = nw;
     }
   }
 }
@@ -1027,7 +1019,7 @@ try {
             // for await (const line of tick_file2.readLines())
               // await doTickLine(line);
             tick_count = 0;
-            const tick_file = await fsPromises.open('../ticks');
+            const tick_file = await fsPromises.open('../ticks-2024');
             for await (const line of tick_file.readLines())
               await doTickLine(line);
             loading = 0;
@@ -1074,12 +1066,7 @@ async function doPrintLine() {
     ;
   if (con_str != '') tstr += ' --- ' + con_str;
   tstr += ' ' + base_pos.toExponential(4);
-  // tstr += ' ' + v_id;
-  // if (ov_id >= 0) tstr += ' ' + vv_pos[v_id][ov_id];
   fs.appendFileSync('log',tstr + '\n');
   console.log(tstr);
   con_str = '';
-
-  // fs.appendFileSync('log_id',id_str + '\n');
-  // id_str = '';
 }

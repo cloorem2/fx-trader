@@ -1,1 +1,1 @@
-{"type":"PRICE","time":"2023-12-15T21:58:00.041406639Z","bids":[{"price":"1.08933","liquidity":10000000}],"asks":[{"price":"1.08963","liquidity":10000000}],"closeoutBid":"1.08933","closeoutAsk":"1.08963","status":"non-tradeable","tradeable":false,"instrument":"EUR_USD"}
+{"type":"PRICE","time":"2024-01-12T21:58:00.073625753Z","bids":[{"price":"1.09495","liquidity":10000000}],"asks":[{"price":"1.09520","liquidity":10000000}],"closeoutBid":"1.09495","closeoutAsk":"1.09520","status":"non-tradeable","tradeable":false,"instrument":"EUR_USD"}

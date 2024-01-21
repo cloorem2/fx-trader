@@ -1,4 +1,3 @@
-https://api-fxtrade.oanda.com/v3/accounts/001-001-9530466-002
 {
   name: 'CHF_JPY',
   type: 'CURRENCY',
