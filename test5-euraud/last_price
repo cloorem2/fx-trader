@@ -1,0 +1,1 @@
+{"type":"PRICE","time":"2024-01-19T21:58:00.033902514Z","bids":[{"price":"1.65134","liquidity":10000000}],"asks":[{"price":"1.65212","liquidity":10000000}],"closeoutBid":"1.65134","closeoutAsk":"1.65212","status":"non-tradeable","tradeable":false,"instrument":"EUR_AUD"}
