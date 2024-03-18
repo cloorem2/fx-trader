@@ -1,0 +1,13 @@
+cp id_nv/$1 id_nv/$2
+cp dmid_brain/$1 dmid_brain/$2
+cp pvar_brain/$1 pvar_brain/$2
+cp dmid_t_brain/$1 dmid_t_brain/$2
+cp pvar_t_brain/$1 pvar_t_brain/$2
+cp profit_brain/$1 profit_brain/$2
+cp adt/$1 adt/$2
+cp aadmid/$1 aadmid/$2
+cp apvar/$1 apvar/$2
+cp aapvar_err/$1 aapvar_err/$2
+cp aadmid_err/$1 aadmid_err/$2
+cp pricing_a/$1 pricing_a/$2
+cp pricing_b/$1 pricing_b/$2

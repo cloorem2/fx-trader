@@ -136,8 +136,8 @@ function doSummary() {
           const tpos = Number(positions[ii].long.units)
             + Number(positions[ii].short.units);
           if (tpos == 0) continue;
-          if (typeof pos[tpname] == 'undefined') pos[tpname] = 0;
-          pos[tpname] += tpos;
+          // if (typeof pos[tpname] == 'undefined') pos[tpname] = 0;
+          pos[tpname] = tpos;
           nav -= Number(positions[ii].long.unrealizedPL);
           nav -= Number(positions[ii].short.unrealizedPL);
         }
@@ -999,6 +999,7 @@ var transTimeout;
             // const tick_file2 = await fsPromises.open('../data/ticks-hist');
             // for await (const line of tick_file2.readLines())
               // await doTickLine(line);
+              /*   /// not loading
             tick_count = 0;
             for (const f of fs.readdirSync('..')) {
               if (f.indexOf('ticks-' + pname) == 0) {
@@ -1006,7 +1007,7 @@ var transTimeout;
                 for await (const line of tick_file.readLines())
                   await doTickLine(line);
               }
-            }
+            } */
             loading = 0;
             console.log('done loading oday0',oday0);
             // console.log(dir_t);

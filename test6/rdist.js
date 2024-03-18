@@ -1,6 +1,7 @@
 const fs = require('fs');
 const fsPromises = require('fs/promises');
 const https = require('https');
+const exec = require('child_process').exec;
 
 const num_strats = 5;
 const num_final = 9;
@@ -17,7 +18,10 @@ if (pname.indexOf('USD') == 4) { c_type = 0;
   console.log(pname,'type',c_type);
   process.exit();
 }
-if (pname.indexOf('JPY') >= 0) { precission = 3; c_type = 3; }
+if (pname.indexOf('JPY') >= 0) {
+  precission = 3;
+  // c_type = 3;
+}
 
 var omidp = 0;
 const spw = 60 * 60 * 24 * 7;
@@ -26,6 +30,7 @@ const spw = 60 * 60 * 24 * 7;
 const aspread = Number(fs.readFileSync('aspread-' + pname,'utf8'));
 // console.log('doMain ' + new Date());
 var max_dd = 0;
+var max_dd_lap = 0;
 var back_nav = 1;
 var back_nav0 = 0;
 
@@ -104,7 +109,12 @@ var break_rank = 0;
 var longRate = 0;
 var shortRate = 0;
 var marginRate = 0;
+var comp_fn = '';
+var comp_fn_flag = 0;
+var add_fn_flag = 0;
+var new_leg_flag = 1;
 async function doMain() {
+  // console.log('doMain');
   const fin_file = await fsPromises.open('financing.txt');
   var finflag0 = 0;
   var finflag1 = 0;
@@ -146,6 +156,7 @@ async function doMain() {
     max_nav = 0;
     max_nav_count = 0;
     max_dd = 0;
+    max_dd_lap = 0;
     d_n = 1e7;
     back_pos = 0;
     back_price = 0;
@@ -154,6 +165,7 @@ async function doMain() {
     dmidps = 0;
     tick_count = 0;
     trade_count = 0;
+    tick_cut = -1;
 
     base_price = 0;
     base_profit = 0;
@@ -170,10 +182,78 @@ async function doMain() {
     tint1 = 0;
     long_rate_x = 0;
     odayStr = '';
+    oelapsed_days = 0;
+    elapsed_days = 0;
+    max_ds = 0;
+    max_dl = 0;
+    max_price = 0;
 
+    comp_fn_flag = 0;
+    add_fn_flag = 0;
+    comp_fn = '../data-' + pname + '/ticks-comp-' + tleg_id.join('');
+    // console.log('comp_fn',comp_fn);
+    try {
+      fs.unlinkSync(comp_fn + '-0');
+    } catch {}
+    try {
+      if (rmode == 0) fs.unlinkSync('profile-' + pname + '-0');
+    } catch {}
+
+    try {
+      const comp_file = await fsPromises.open(comp_fn);
+      comp_fn_flag = 1;
+      // console.log(' !!! we got one',tick_count);
+      for await (const line of comp_file.readLines())
+        await doTickLine(line);
+    } catch {
+      // do this from within the data dir
+      /*
+      for (const f of fs.readdirSync('../data-' + pname)) {
+        if (f.indexOf('.csv') >= 0)
+          fs.unlinkSync('../data-' + pname + '/' + f);
+        if (f.indexOf('.txt') >= 0)
+          fs.unlinkSync('../data-' + pname + '/' + f);
+      }
+      for (const f of fs.readdirSync('../data-' + pname))
+        if (f.indexOf('H') == 0) {
+          const { stdout } = await sh('cd ../data-' + pname + ';unzip ' + f);
+        }
+        */
+      for (const f of fs.readdirSync('../data-' + pname)) {
+        if (f.indexOf('.csv') >= 0) {
+          const tick_file = await fsPromises.open('../data-' + pname + '/' + f);
+          for await (const line of tick_file.readLines())
+            await doTickLine(line);
+          tick_file.close();
+        }
+      }
+      add_fn_flag = 1;
+      for (const f of fs.readdirSync('..')) {
+        if (f.indexOf('ticks') == 0) {
+          if (f.indexOf(pname) >= 0) {
+            // console.log('this too',f);
+            const tick_file = await fsPromises.open('../' + f);
+            for await (const line of tick_file.readLines())
+              await doTickLine(line);
+            tick_file.close();
+          }
+        }
+      }
+      fs.appendFileSync(comp_fn + '-0', current_time + ' ' + current_bid + '\n');
+    }
+    try {
+      if (comp_fn_flag == 0) {
+        fs.renameSync(comp_fn + '-0',comp_fn);
+        if (rmode > 0) break_rank = 1;
+      }
+    } catch { console.log('couldnt rename',comp_fn); }
+      // const { stdout } = await sh('rm ../data-' + pname + '/DAT_ASCII_*');
+
+      /*
     const tick_file = await fsPromises.open('../data-' + pname + '/ticks-hist-comp');
     for await (const line of tick_file.readLines())
       await doTickLine(line);
+      */
 
     for (var i in dir_t_save) {
       delete dir_t_save[i];
@@ -185,15 +265,39 @@ async function doMain() {
       maxa_t_save[i] = maxa_t[i];
       maxb_t_save[i] = maxb_t[i];
     }
-    // const tick_file2 = await fsPromises.open('../ticks');
-    // for await (const line of tick_file2.readLines())
-      // await doTickLine(line);
+      /*
+    const tick_file2 = await fsPromises.open('../ticks');
+    for await (const line of tick_file2.readLines())
+      await doTickLine(line);
+      */
 
     if (tick_count > tick_count_max[rmode])
       tick_count_max[rmode] = tick_count;
 
+    if (base_pos < 0) {
+      base_profit += base_price - current_ask;
+      balance += base_size * (base_price - current_ask);
+      base_count++;
+      if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+        elapsed_days.toExponential(9) + ' ' + balance.toExponential(5) + '\n'
+      );
+    }
+    if (base_pos > 0) {
+      base_profit += current_bid - base_price;
+      balance += base_size * (current_bid - base_price);
+      base_count++;
+      if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+        elapsed_days.toExponential(9) + ' ' + balance.toExponential(5) + '\n'
+      );
+    }
+    try {
+      if (rmode == 0) fs.renameSync('profile-' + pname + '-0','profile-' + pname);
+    } catch {}
     if (balance < 1e-9) { balance = 1e-9; max_dd = 1; }
-    if (elapsed_days == 0) elapsed_days = 1;
+    if (elapsed_days == 0) {
+      elapsed_days = 1;
+      console.log('bad elapsed_days zero',tick_cut,tick_count);
+    }
     const profit_x = Math.exp(Math.log(balance)/elapsed_days) - 1;
     if (profit_x !== profit_x) {
       profit_x = 0;
@@ -205,8 +309,17 @@ async function doMain() {
       + ' dd ' + max_dd.toExponential(4)
       + ' ' + balance.toExponential(4)
       + ' lev ' + tlevx.toExponential(3)
-      + ' rmode ' + rmode
+      + ' c ' + comp_fn_flag
+      + ' r ' + rmode
+      + ' p ' + base_pos
+      + ' ' + base_price
     );
+    /*
+    console.log(
+      ' laps ' + (max_dd_lap/elapsed_days).toExponential(2)
+      + ' ' + max_dd_lap.toExponential(2)
+      + ' ' + elapsed_days.toExponential(2)
+    ); */
 
 
     for (var i in dir_t) {
@@ -214,100 +327,86 @@ async function doMain() {
       delete maxb_t[i];
       delete maxa_t[i];
     }
-    if (smode == 0) {
-      if (profit_c[rmode] < 100) profit_c[rmode]++;
-      else profit_c[rmode] = 100;
-      profit_t[rmode] *= 1 - 1 / profit_c[rmode];
-      profit_t[rmode] += profit_x / profit_c[rmode];
-      if (profit_t[rmode] < 0) profit_t[rmode] = 0;
-      final_leg_t[rmode] = tleg_id;
-      var trmode = rmode;
-      while (trmode > 0) {
-        if (profit_t[trmode] > profit_t[trmode - 1]) {
-          var tp = profit_t[trmode];
-          profit_t[trmode] = profit_t[trmode - 1];
-          profit_t[trmode - 1] = tp;
-          tp = profit_c[trmode];
-          profit_c[trmode] = profit_c[trmode - 1];
-          profit_c[trmode - 1] = tp;
-          var final_leg_v = final_leg_t[trmode];
-          final_leg_t[trmode] = final_leg_t[trmode - 1];
-          final_leg_t[trmode - 1] = final_leg_v;
-          var tx = levx_t[trmode];
-          levx_t[trmode] = levx_t[trmode - 1];
-          levx_t[trmode - 1] = tx;
-          var tcm = tick_count_max[trmode];
-          tick_count_max[trmode] = tick_count_max[trmode - 1];
-          tick_count_max[trmode - 1] = tcm;
-        } else break;
-        trmode--;
-        break_rank = 1;
+    // if (rmode == num_final - 1) {
+    if ((new_leg_flag == 1)
+      && (smode < 10)
+      && (Math.abs(max_dd - 0.5) > 0.01)) {
+      levx_t[rmode] *= 1 + (0.5 - max_dd);
+      tlevx = levx_t[rmode];
+      for (var i = 0; i < num_strats; i++) {
+        dir_t[tleg_id[i]] = 0;
+        maxb_t[tleg_id[i]] = 0;
+        maxa_t[tleg_id[i]] = 0;
       }
-      if (trmode == 0) {
-        var fstr = '';
-        for (var i = 0; i < num_strats; i++) {
-          const t = tleg_id[i];
-          fstr += t
-            + ' ' + maxb_t_save[t]
-            + ' ' + maxa_t_save[t]
-            + ' ' + dir_t_save[t]
-            + '\n';
-        }
-        fs.writeFileSync('rdist_' + pname,fstr);
-        fstr = '';
-        for (var i in prof_t)
-          fstr += i + ' ' + prof_t[i].toExponential(1) + '\n';
-        fs.writeFileSync('prof_t_' + pname,fstr);
-        // fs.writeFileSync('levx',levx_t[0].toExponential(3) + '\n');
-        // try { fs.renameSync('profit_profile-' + pname,
-          // 'profit_profile0-' + pname);
-        // } catch {}
-      // } else {
-        // try { fs.renameSync('profit_profile-' + pname,
-          // 'profit_profile1-' + pname);
-        // } catch {}
-      }
-      rmode = trmode;
-      if (balance > 1) {
-        if (max_dd < 0.5) levx_t[rmode] *= 1.001;
-        else levx_t[rmode] /= 1.001;
-      }
-      if (levx_t[rmode] > 0.9 / marginRate)
-        levx_t[rmode] = 0.9 / marginRate;
-      /*
-      smode = 1;
-      profit_x1 = profit_x;
+      smode++;
       for (var i in prof_t) delete prof_t[i];
-      for (var t of tleg_id) {
-        dir_t[t] = 0;
-        maxb_t[t] = 0;
-        maxa_t[t] = 0;
-      }
-      // if (profit_x < 0) levx_t[rmode] *= 1 - max_dd / 100;
-      // tlevx = levx_t[trmode] * (1 + (2 * Math.random() - 1) / 10);
-      tlevx = levx_t[trmode] * tlevd;
       continue;
-    } else if (smode == 1) {
-      if (profit_x > profit_x1) {
-        levx_t[rmode] *= 1 - 1 / 5;
-        levx_t[rmode] += tlevx / 5;
-        if (profit_c[rmode] > 30) profit_c[rmode] = 30;
-      }
-      if (rmode == 0) {
-        smode = 2;
-        tlevx = levx_t[rmode] / 2;
-        for (var t of tleg_id) {
-          dir_t[t] = 0;
-          maxb_t[t] = 0;
-          maxa_t[t] = 0;
-        }
-        for (var i in prof_t) delete prof_t[i];
-        continue;
-      }
-      */
     }
+
+    if (profit_c[rmode] < 29) profit_c[rmode]++;
+    else profit_c[rmode] = 29;
+    profit_t[rmode] *= 1 - 1 / profit_c[rmode];
+    profit_t[rmode] += profit_x / profit_c[rmode];
+    if (profit_t[rmode] <= 0) {
+      try {
+        if (rmode > 0) fs.unlinkSync(comp_fn);
+      } catch {
+        console.log('couldnt unlink looser',comp_fn);
+      }
+      profit_t[rmode] = 0;
+    }
+    if (max_dd < 0.5) levx_t[rmode] *= 1 + 1 / profit_c[rmode] / 20;
+    else levx_t[rmode] /= 1 + 1 / profit_c[rmode] / 20;
+    if (levx_t[rmode] > 0.9 / marginRate)
+      levx_t[rmode] = 0.9 / marginRate;
+    final_leg_t[rmode] = tleg_id;
+    var trmode = rmode;
+    while (trmode > 0) {
+      if (profit_t[trmode] > profit_t[trmode - 1]) {
+        var tp = profit_t[trmode];
+        profit_t[trmode] = profit_t[trmode - 1];
+        profit_t[trmode - 1] = tp;
+        tp = profit_c[trmode];
+        profit_c[trmode] = profit_c[trmode - 1];
+        profit_c[trmode - 1] = tp;
+        var final_leg_v = final_leg_t[trmode];
+        final_leg_t[trmode] = final_leg_t[trmode - 1];
+        final_leg_t[trmode - 1] = final_leg_v;
+        var tx = levx_t[trmode];
+        levx_t[trmode] = levx_t[trmode - 1];
+        levx_t[trmode - 1] = tx;
+        var tcm = tick_count_max[trmode];
+        tick_count_max[trmode] = tick_count_max[trmode - 1];
+        tick_count_max[trmode - 1] = tcm;
+      } else break;
+      trmode--;
+      break_rank = 1;
+    }
+    if (trmode == 0) {
+      var fstr = '';
+      for (var i = 0; i < num_strats; i++) {
+        const t = tleg_id[i];
+        fstr += t
+          + ' ' + maxb_t_save[t]
+          + ' ' + maxa_t_save[t]
+          + ' ' + dir_t_save[t]
+          + '\n';
+      }
+      fs.writeFileSync('rdist_' + pname,fstr);
+      fstr = '';
+      for (var i in prof_t)
+        fstr += i + ' ' + prof_t[i].toExponential(1) + '\n';
+      fs.writeFileSync('prof_t_' + pname,fstr);
+    }
+    rmode = trmode;
+    /*
+    if (max_dd < 0.5) levx_t[rmode] *= 1 + 1 / profit_c[rmode] / 10;
+    else levx_t[rmode] /= 1 + 1 / profit_c[rmode] / 10;
+    if (levx_t[rmode] > 0.9 / marginRate)
+      levx_t[rmode] = 0.9 / marginRate;
+      */
+
     for (var i in prof_t) delete prof_t[i];
-    if (profit_c[rmode] < 20) break_rank = 1;
     console.log(
         ' laps ' + elapsed_days.toFixed()
       + ' tint ' + tint0.toExponential(5)
@@ -329,41 +428,51 @@ async function doMain() {
         + ' ' + levx_t[i].toExponential(3)
         + '  -- ';
       for (var ii in final_leg_t[i])
-        if (c_type == 3) tstr += ' ' + final_leg_t[i][ii];
-        else tstr += ' ' + final_leg_t[i][ii].slice(3,7);
+        tstr += ' ' + final_leg_t[i][ii];
       console.log(tstr);
     }
     fs.writeFileSync('final_' + pname,fstr);
     fs.writeFileSync('tick_count_max_' + pname,tick_count_max.join('\n'));
 
     rmode++;
-    if (rmode >= num_final) {
-      profit_t.length = num_final;
-      profit_c.length = num_final;
-      levx_t.length = num_final;
-      rmode = 0;
-    }
+    // if (rmode == num_final - 1) process.exit();
     if (break_rank == 1) rmode = 0;
     break_rank = 0;
-    if (rmode == 0) process.exit();
+    if (rmode == 0) {
+      try {
+        fs.unlinkSync('../data-' + pname + '/ticks-comp-'
+          + final_leg_t[num_final - 1].join('')
+        );
+      } catch {
+        /*
+        console.log('couldnt unlink last',
+          '../data-' + pname + '/ticks-comp-'
+            + final_leg_t[num_final - 1].join('')
+        ); */
+      }
+      return;
+      // process.exit();
+    }
       // tick_cut = Math.random() * tick_count_max[rmode] / 4
         // + tick_count_max[rmode] / 3;
     if ((rmode == num_final - 1)
       || (rmode == final_leg_t.length)
       || (profit_t[rmode] <= 0)
     ) {
-      // tlevx = levx_t[0] * tlevd;
-      tlevx = levx_t[0];
-      levx_t[rmode] = tlevx;
-      profit_c[rmode] = 20;
+      // levx_t[rmode] = 1;
+      // levx_t[rmode] = levx_t[0] * (1 + (2*Math.random() - 1)/10);
+      levx_t[rmode] = levx_t[0];
+      tlevx = levx_t[rmode];
+      new_leg_flag = 1;
+      profit_c[rmode] = 0;
       profit_t[rmode] = profit_t[0];
       tleg_id = [];
       const rand_x = Math.random();
       if ((rand_x < 0.6) || (profit_t[0] <= 0)) {
         for (var i = 0; i < num_strats; i++) {
-          const mod_leg = c_type == 3
-            ? (Math.random() * 4e-2 * current_ask).toExponential(3)
-            : (Math.random() * 4e-2).toFixed(precission)
+          const mod_leg =
+// c_type == 3 ? (Math.random() * 4e-2 * current_ask).toExponential(3) :
+            (Math.random() * 4e-2 * current_ask).toFixed(precission)
             ;
           tleg_id[i] = mod_leg;
           var ii = i;
@@ -438,6 +547,7 @@ async function doMain() {
       }
     } else {
       tlevx = levx_t[rmode];
+      new_leg_flag = 0;
       tleg_id = final_leg_t[rmode];
       for (var i = 0; i < num_strats; i++) {
         dir_t[tleg_id[i]] = 0;
@@ -484,7 +594,29 @@ async function elapseDays(t) {
   elapsed_days = (yo1 - yo0) * 365
     + (mo1 - mo0) * 365 / 12
     + (do1 - do0)
-    + (ho1 - ho0) / 24;
+    + (ho1 - ho0) / 24
+    + (mi1 - mi0) / 24 / 60
+    + (si1 - si0) / 24 / 60 / 60 / 1000
+    ;
+
+    /*
+  if (Math.abs(elapsed_days - oelapsed_days) > max_bad) {
+    max_bad = Math.abs(elapsed_days - oelapsed_days);
+    console.log('sucks',add_fn_flag,t,elapsed_days,oelapsed_days);
+  } */
+}
+var max_bad = 0;
+
+async function sh(cmd) {
+  return new Promise(function (resolve, reject) {
+    exec(cmd, (err, stdout, stderr) => {
+      if (err) {
+        reject(err);
+      } else {
+        resolve({ stdout, stderr });
+      }
+    });
+  });
 }
 
 var obase_pos = 0;
@@ -496,16 +628,28 @@ var base_count = 0;
 var midp = 0;
 var odir_key = '';
 var last_time = '';
+var max_ds = 0;
+var max_dl = 0;
+var max_price = 0;
+var current_time = '';
 async function doTickLine(line) {
-  var lst = line.split(' ');
+  const lst = comp_fn_flag + add_fn_flag == 0
+    ? line.split(' ').join('').split(',')
+    : line.split(' ')
+    ;
+  // var lst = line.split(' ');
   if (lst.length < 2) return;
+  /*
+  if (add_fn_flag == 1) {
+    console.log('hree',pname);
+    console.log(lst);
+    process.exit();
+  } */
+  if (lst[0].length > 17) return;
+  current_time = lst[0];
   current_bid = Number(lst[1]);
-  // current_ask = Number(lst[2]);
-  current_ask = Number((current_bid + aspread).toFixed(precission));
-  if (c_type > 0) {
-    current_bid = 1 / current_ask;
-    current_ask = 1 / Number(lst[1]);
-  }
+  if (add_fn_flag == 1) current_ask = Number(lst[2]);
+  else current_ask = Number((current_bid + aspread).toFixed(precission));
   midp = (current_ask + current_bid) / 2;
   if (omidp !== omidp) omidp = midp;
   dmidp = (midp - omidp) / omidp;
@@ -521,36 +665,16 @@ async function doTickLine(line) {
     else if (dir_t[t] == -1) dir_key += '2';
     else { dir_key += '0'; init_flag = 1; }
   }
-  if (init_flag == 1) return;
-  tick_count++;
+  // if (init_flag == 1) return;
+  if (init_flag == 0) tick_count++;
   if (tick_count > tick_cut) {
     if (starting_month == '') {
-      starting_month = lst[0];
-      await setStartDate(lst[0]);
+      starting_month = current_time;
+      await setStartDate(current_time);
     }
-    await elapseDays(lst[0]);
+    await elapseDays(current_time);
   }
-
-  if (base_pos < 0) {
-    short_rate_x += base_size * (elapsed_days - oelapsed_days);
-    var nav = balance + base_size * (base_price - current_ask);
-    if (nav <= 0) { nav = 0; balance = 0; base_size = 0; }
-    if (nav > max_nav) { max_nav = nav; max_nav_count = tick_count; }
-    if (max_nav > 0)
-      if ((max_nav - nav) / max_nav > max_dd)
-        max_dd = (max_nav - nav) / max_nav;
-  }
-  if (base_pos > 0) {
-    long_rate_x += base_size * (elapsed_days - oelapsed_days);
-    var nav = balance + base_size * (current_bid - base_price);
-    if (nav <= 0) { nav = 0; balance = 0; base_size = 0; }
-    if (nav > max_nav) { max_nav = nav; max_nav_count = tick_count; }
-    if (max_nav > 0)
-      if ((max_nav - nav) / max_nav > max_dd)
-        max_dd = (max_nav - nav) / max_nav;
-  }
-  oelapsed_days = elapsed_days;
-  dayStr = lst[0].slice(0,8);
+  dayStr = current_time.slice(0,8);
   if (dayStr != odayStr) {
     balance += short_rate_x * shortRate;
     balance += long_rate_x * longRate;
@@ -561,54 +685,100 @@ async function doTickLine(line) {
     odayStr = dayStr;
   }
 
-  if (tick_count > tick_cut) {
-    if (dir_key != odir_key) {
-      if (prof_t[dir_key] > 0) {
-        if (base_pos <= 0) {
-          if (base_price > 0) {
-            base_profit += base_price - current_ask;
-            balance += base_size * (base_price - current_ask);
-            tint1 += base_size * (base_price - current_ask);
-            base_count++;
-          }
-          base_pos = 1;
-          base_price = current_ask;
-          base_size = tlevx * balance / current_ask;
-          /*
-          if (rmode == 0) fs.appendFileSync('profit_profile-' + pname,
-            base_pos + ' ' + base_price
-            + ' ' + (1/midp/marginRate).toExponential(5)
-            + ' ' + (1/marginRate).toExponential(5)
-            + '\n');
-            */
-        }
+  if (base_pos < 0) {
+    if (elapsed_days > oelapsed_days)
+      short_rate_x += tlevx * balance * (elapsed_days - oelapsed_days);
+    var nav = balance + base_size * (base_price - current_ask);
+    if (nav <= 0) { nav = 0; balance = 0; base_size = 0; }
+    if (nav > max_nav) { max_nav = nav; max_nav_count = tick_count; }
+    if (max_nav > 0)
+      if ((max_nav - nav) / max_nav > max_dd) {
+        max_dd = (max_nav - nav) / max_nav;
+        max_dd_lap = elapsed_days;
+        if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+          elapsed_days.toExponential(9) + ' ' + nav.toExponential(5) + '\n'
+        );
       }
-      if (prof_t[dir_key] < 0) {
-        if (base_pos >= 0) {
-          if (base_price > 0) {
-            base_profit += current_bid - base_price;
-            balance += base_size * (current_bid - base_price);
-            tint0 += base_size * (current_bid - base_price);
-            base_count++;
-          }
-          base_pos = -1;
-          base_price = current_bid;
-          base_size = tlevx * balance / current_bid;
-          /*
-          if (rmode == 0) fs.appendFileSync('profit_profile-' + pname,
-            base_pos + ' ' + base_price
-            + ' ' + (1/midp/marginRate).toExponential(5)
-            + ' ' + (1/marginRate).toExponential(5)
-            + '\n');
-            */
-        }
+  }
+  if (base_pos > 0) {
+    if (elapsed_days > oelapsed_days)
+      long_rate_x += tlevx * balance * (elapsed_days - oelapsed_days);
+    var nav = balance + base_size * (current_bid - base_price);
+    if (nav <= 0) { nav = 0; balance = 0; base_size = 0; }
+    if (nav > max_nav) { max_nav = nav; max_nav_count = tick_count; }
+    if (max_nav > 0)
+      if ((max_nav - nav) / max_nav > max_dd) {
+        max_dd = (max_nav - nav) / max_nav;
+        max_dd_lap = elapsed_days;
+        if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+          elapsed_days.toExponential(9) + ' ' + nav.toExponential(5) + '\n'
+        );
+      }
+  }
+  if (elapsed_days > oelapsed_days) oelapsed_days = elapsed_days;
+
+  if (dir_key != odir_key) {
+    max_ds = 0;
+    max_dl = 0;
+    max_price = midp;
+    await doTrade(dir_key);
+    if (comp_fn_flag == 0)
+      fs.appendFileSync(comp_fn + '-0', current_time + ' ' + lst[1] + '\n');
+  }
+  if (comp_fn_flag == 0) {
+    if (max_price != 0) {
+      if (max_price - midp > max_ds) {
+        max_ds = max_price - midp;
+        fs.appendFileSync(comp_fn + '-0', current_time + ' ' + lst[1] + '\n');
+      }
+      if (midp - max_price > max_dl) {
+        max_dl = midp - max_price;
+        fs.appendFileSync(comp_fn + '-0', current_time + ' ' + lst[1] + '\n');
       }
     }
   }
-  if (typeof prof_t[dir_key] == 'undefined')
-    prof_t[dir_key] = 0;
-  prof_t[dir_key] += dmidp;
+  if (odir_key != '') {
+    if (typeof prof_t[odir_key] == 'undefined')
+      prof_t[odir_key] = 0;
+    prof_t[odir_key] += dmidp;
+  }
   odir_key = dir_key;
+}
+
+async function doTrade(dir_key) {
+  if (tick_count < tick_cut) return;
+  if (prof_t[dir_key] > 0) {
+    if (base_pos <= 0) {
+      if (base_price > 0) {
+        base_profit += base_price - current_ask;
+        balance += base_size * (base_price - current_ask);
+        // tint1 += base_size * (base_price - current_ask);
+        base_count++;
+        if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+          elapsed_days.toExponential(9) + ' ' + balance.toExponential(5) + '\n'
+        );
+      }
+      base_pos = 1;
+      base_price = current_ask;
+      base_size = tlevx * balance / current_ask;
+    }
+  }
+  if (prof_t[dir_key] < 0) {
+    if (base_pos >= 0) {
+      if (base_price > 0) {
+        base_profit += current_bid - base_price;
+        balance += base_size * (current_bid - base_price);
+        // tint0 += base_size * (current_bid - base_price);
+        base_count++;
+        if (rmode == 0) fs.appendFileSync('profile-' + pname + '-0',
+          elapsed_days.toExponential(9) + ' ' + balance.toExponential(5) + '\n'
+        );
+      }
+      base_pos = -1;
+      base_price = current_bid;
+      base_size = tlevx * balance / current_bid;
+    }
+  }
 }
 
 async function doDir(tag) {

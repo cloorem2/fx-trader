@@ -25,6 +25,7 @@ async function doMain() {
     for (var i = 0; i < x_len; i++) {
       const pname = pair_l[i];
       if (pname == '') continue;
+      // console.log(pname);
       const { stdout } = await sh('node rdist.js ' + pname);
       console.log(stdout);
 
@@ -43,6 +44,13 @@ async function doMain() {
         tstr += ' ' + Number(ttstr[1]).toExponential(3);
         tstr += ' ' + Number(ttstr[2]).toExponential(3);
         tstr += ' -- ' + ttstr.slice(3,3 + num_strats).join(' ');
+        /*
+        tstr += ' -- ' + Number(ttstr[3]).toExponential(2);
+        tstr += ' ' + Number(ttstr[4]).toExponential(2);
+        tstr += ' ' + Number(ttstr[5]).toExponential(2);
+        tstr += ' -- ' + Number(ttstr[6]).toExponential(2);
+        tstr += ' ' + Number(ttstr[7]).toExponential(2);
+        */
         console.log(tstr);
         if (ii == pname) prof_l[i] = Number(ttstr[1]);
       }
